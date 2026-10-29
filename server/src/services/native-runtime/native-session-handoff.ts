@@ -68,7 +68,7 @@ export async function buildNativeSessionHandoff(input: {
   const afterBoundary = (date: typeof issueComments.createdAt | typeof issueThreadInteractions.createdAt | typeof heartbeatRuns.createdAt | typeof issueDocuments.createdAt) =>
     boundary ? sql`${date} > ${boundary.createdAt.toISOString()}::timestamptz` : undefined;
   const excerpt = (body: SQL) => sql<string>`case when length(${body}) > ${ENTRY_MAX_CHARS}
-    then left(${body}, 2900) || ${"\n[content omitted]\n"} || right(${body}, 900) else ${body} end`;
+    then left(${body}, 2900) || chr(10)||'[content omitted]'||chr(10) || right(${body}, 900) else ${body} end`;
   const commentFields = {
     id: issueComments.id, body: excerpt(sql`${issueComments.body}`),
     truncated: sql<boolean>`length(${issueComments.body}) > ${ENTRY_MAX_CHARS}`,
