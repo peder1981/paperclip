@@ -40,7 +40,12 @@ export async function isCancelledNativeStartup(db: Db, run: Run, coordinator: Co
     Boolean(run.controllerBootId && run.controllerBootId !== legacyControllerBootId &&
       run.controllerLeaseExpiresAt && run.controllerLeaseExpiresAt <= new Date());
   const beforeReviewDispatch = isPreDispatchReviewWait(run) && !coordinator;
-  const beforeSelection = beforeReviewDispatch || historicalBeforeSelection || run.runtimeMode === "legacy" && !run.runtimeModeResolvedAt &&
+  // The invokability gate aborts execution-start before any provider dispatch:
+  // the atomic status UPDATE is the sole fence, so a rejected run provably
+  // never spawned a process or adapter. The retained-event check below still
+  // rejects contradictory evidence.
+  const cancelledAtInvokableGate = run.errorCode === "agent_not_invokable";
+  const beforeSelection = beforeReviewDispatch || cancelledAtInvokableGate || historicalBeforeSelection || run.runtimeMode === "legacy" && !run.runtimeModeResolvedAt &&
     !run.nativeSessionId && !coordinator && claimedAdapterType(run) === "paperclip_runner" &&
     cancellation?.beforeNativeSelection === true;
   const neverClaimed = run.runtimeMode === "native" && coordinator &&
@@ -49,7 +54,7 @@ export async function isCancelledNativeStartup(db: Db, run: Run, coordinator: Co
     !coordinator.controllerPid && !coordinator.leaseOwner && !coordinator.leaseExpiresAt &&
     !coordinator.resultId && !coordinator.failureDetail?.successorRunId;
   if (!beforeSelection && !neverClaimed) return false;
-  const settled = beforeReviewDispatch || typeof run.resultJson?.startupPreparationSettledAt === "string";
+  const settled = beforeReviewDispatch || cancelledAtInvokableGate || typeof run.resultJson?.startupPreparationSettledAt === "string";
   // The old preparer can still be unwinding even though the run is terminal.
   if (!settled && run.controllerLeaseExpiresAt && run.controllerLeaseExpiresAt > new Date()) return false;
   const leases = await db.select().from(environmentLeases).where(and(
