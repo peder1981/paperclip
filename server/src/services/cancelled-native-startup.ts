@@ -44,7 +44,8 @@ export async function isCancelledNativeStartup(db: Db, run: Run, coordinator: Co
   // the atomic status UPDATE is the sole fence, so a rejected run provably
   // never spawned a process or adapter. The retained-event check below still
   // rejects contradictory evidence.
-  const cancelledAtInvokableGate = run.errorCode === "agent_not_invokable";
+  const cancelledAtInvokableGate = run.errorCode === "agent_not_invokable" ||
+    run.errorCode === "continuation_task_ownership_changed";
   const beforeSelection = beforeReviewDispatch || cancelledAtInvokableGate || historicalBeforeSelection || run.runtimeMode === "legacy" && !run.runtimeModeResolvedAt &&
     !run.nativeSessionId && !coordinator && claimedAdapterType(run) === "paperclip_runner" &&
     cancellation?.beforeNativeSelection === true;
