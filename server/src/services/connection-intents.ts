@@ -1055,8 +1055,13 @@ export function connectionIntentService(db: Db) {
         if (managed.binding.mode === "responsible_user") {
           const selected = await service.select({ companyId: loaded.issue.companyId, agentId: payload.requestingAgentId, userId, adapterType: managed.agent.adapterType, model: managed.adapterConfig.model, runnerProvider: managed.adapterConfig.provider, acpxAgent: managed.adapterConfig.acpxAgent, binding: managed.binding, allowUninstalledPersonal: true });
           if (selected.connection.id !== selectedConnection.id) throw conflict("Choose this account as your personal default in Connections first");
-          const installs = await txAccess.listConnectionInstalls(selectedConnection.id, loaded.issue.companyId);
-          await txAccess.putConnectionInstalls(selectedConnection.id, { installs: [...installs, { targetType: "agent", targetId: payload.requestingAgentId }] }, { actorType: "user", actorId: userId });
+          const [requestingAgent] = await tx.select({ id: agents.id }).from(agents).where(
+            and(eq(agents.id, payload.requestingAgentId), eq(agents.companyId, loaded.issue.companyId)),
+          );
+          if (requestingAgent) {
+            const installs = await txAccess.listConnectionInstalls(selectedConnection.id, loaded.issue.companyId);
+            await txAccess.putConnectionInstalls(selectedConnection.id, { installs: [...installs, { targetType: "agent", targetId: payload.requestingAgentId }] }, { actorType: "user", actorId: userId });
+          }
         }
         const selected = await service.select({ companyId: loaded.issue.companyId, agentId: payload.requestingAgentId, userId, adapterType: managed.agent.adapterType, model: managed.adapterConfig.model, runnerProvider: managed.adapterConfig.provider, acpxAgent: managed.adapterConfig.acpxAgent, binding: managed.binding });
         if (selected.connection.id !== selectedConnection.id) throw conflict("This is not the account selected for the agent");
@@ -1113,18 +1118,23 @@ export function connectionIntentService(db: Db) {
         );
       }
 
-      const installs = await txAccess.listConnectionInstalls(
-        selectedConnection.id,
-        loaded.issue.companyId,
+      const [requestingAgent] = await tx.select({ id: agents.id }).from(agents).where(
+        and(eq(agents.id, payload.requestingAgentId), eq(agents.companyId, loaded.issue.companyId)),
       );
-      const requestedInstall = { targetType: "agent" as const, targetId: payload.requestingAgentId };
-      const additiveInstalls = installs.some((install) =>
-        install.targetType === requestedInstall.targetType && install.targetId === requestedInstall.targetId
-      ) ? installs : [...installs, requestedInstall];
-      await txAccess.putConnectionInstalls(selectedConnection.id, { installs: additiveInstalls }, {
-        actorType: "user",
-        actorId: userId,
-      });
+      if (requestingAgent) {
+        const installs = await txAccess.listConnectionInstalls(
+          selectedConnection.id,
+          loaded.issue.companyId,
+        );
+        const requestedInstall = { targetType: "agent" as const, targetId: payload.requestingAgentId };
+        const additiveInstalls = installs.some((install) =>
+          install.targetType === requestedInstall.targetType && install.targetId === requestedInstall.targetId
+        ) ? installs : [...installs, requestedInstall];
+        await txAccess.putConnectionInstalls(selectedConnection.id, { installs: additiveInstalls }, {
+          actorType: "user",
+          actorId: userId,
+        });
+      }
 
       if (payload.accessRequest) {
         await grantConnectionAgentTools(txDb, {
