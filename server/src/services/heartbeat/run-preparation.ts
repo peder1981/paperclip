@@ -944,7 +944,7 @@ export async function buildPaperclipRuntimeMcpServers(input: {
     ...effective.entries
       .filter((entry) => entry.effect === "include" && entry.connectionId)
       .map((entry) => entry.connectionId!),
-    ...effective.allowedTools.map((tool) => tool.connectionId),
+    ...effective.allowedTools.map((tool) => tool.connectionId).filter((id): id is string => Boolean(id)),
   ]);
   const allInstalledConnectionIds = new Set(
     effective.installedConnections.map((connection) => connection.id),
