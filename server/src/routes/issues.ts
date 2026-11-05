@@ -14265,7 +14265,14 @@ export function issueRoutes(
               eventPayload: { issueId: existing.id },
             },
           );
-          if (!cancelled || cancelled.status !== "cancelled") {
+          // A run that is already in a terminal state is "stopped" for the
+          // purposes of reassignment: aborting here would orphan the issue
+          // (dead run + unchanged assignee — observed as issue_reassigned
+          // cancellations leaving issues ownerless, JMP-189/JMP-191 class).
+          const runAlreadyStopped = cancelled != null
+            && (cancelled.status === "cancelled"
+              || ["succeeded", "interrupted", "failed", "timed_out"].includes(cancelled.status));
+          if (!cancelled || !runAlreadyStopped) {
             throw conflict(
               "The active agent run could not be stopped before reassignment",
               {
@@ -14309,7 +14316,12 @@ export function issueRoutes(
               },
             },
           );
-          if (!cancelled || cancelled.status !== "cancelled") {
+          // Same as the reassignment path above: a run already in a terminal
+          // state counts as stopped — aborting would strand the issue update.
+          const termRunAlreadyStopped = cancelled != null
+            && (cancelled.status === "cancelled"
+              || ["succeeded", "interrupted", "failed", "timed_out"].includes(cancelled.status));
+          if (!cancelled || !termRunAlreadyStopped) {
             throw conflict(
               "The active agent run could not be stopped before terminalizing the issue",
               {
