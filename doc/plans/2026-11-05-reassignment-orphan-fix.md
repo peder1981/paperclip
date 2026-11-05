@@ -31,3 +31,26 @@ realmente falhou. Alteração mínima, sem mudança de contrato.
   padrão até o fix subir em produção.
 - Rotina de digest e instruções limpas de referências ao agente
   "Gerente de Projetos" (terminated) — escaladas vão direto ao CTO.
+
+## Continuação — wakeups de comentário (deferred_issue_execution)
+
+Mecanismo: comentário durante run viva vira wake `deferred_issue_execution`
+(entregue à fila da execução). `resumeQueuedRuns()` em
+`server/src/services/heartbeat/queue.ts` (~1755-1830) promove wakes stranded,
+mas SÓ quando `issues.executionRunId IS NULL` — se a issue retém
+executionRunId de um run já terminal, o wake deferred pode ficar preso e o
+comentário nunca chega ao agente (agente "ignora" a ordem).
+
+Verificar: `releaseIssueExecutionAndPromote` na finalização do run legacy —
+confirma se executionRunId é anulado e se a promoção do wake deferred ocorre
+em TODO run que termina (não só recovery). Se a issue JMP-194 ficou com
+executionRunId stale após `succeeded`, o guard stranded nunca a viu.
+
+Workaround operacional (validado): `POST /api/agents/{id}/wakeup`
+{"reason":"...","triggerDetail":"system"} — gera run novo que lê os
+comentários pendentes no contexto. NUNCA inserir wakeup/comentário via SQL:
+a aplicação mantém formato e dispara os ganchos certos.
+
+Também observado: `issue_state_guard_mismatch` barra wakes quando
+statusVersion muda entre queue e claim — avaliar se comentários ao MESMO
+assignee deveriam tolerar bump de statusVersion.
