@@ -1,8 +1,23 @@
-diff --git a/dist/acp-agent.js b/dist/acp-agent.js
-index 0214a509eb5e7b777a69e4e34637941c275d27b1..403be02df66e25eee29e7d5bef14627011e02b30 100644
 --- a/dist/acp-agent.js
 +++ b/dist/acp-agent.js
-@@ -2922,9 +2922,19 @@ export class ClaudeAcpAgent {
+@@ -2169,14 +2169,8 @@
+                                 }
+                                 else if (message.compact_result === "failed" && compactionInProgress) {
+                                     compactionInProgress = false;
+-                                    const reason = message.compact_error ? `: ${message.compact_error}` : ".";
+-                                    await sendUpdate({
+-                                        sessionId: message.session_id,
+-                                        update: {
+-                                            sessionUpdate: "agent_message_chunk",
+-                                            content: { type: "text", text: `\n\nCompacting failed${reason}` },
+-                                        },
+-                                    });
++                                    const detail = message.compact_error ? `: ${message.compact_error}` : ".";
++                                    failActive(RequestError.internalError(undefined, `Compacting failed${detail}`));
+                                 }
+                                 break;
+                             }
+@@ -2922,9 +2916,19 @@
                                              amount: message.total_cost_usd,
                                              currency: "USD",
                                          },
@@ -25,7 +40,7 @@ index 0214a509eb5e7b777a69e4e34637941c275d27b1..403be02df66e25eee29e7d5bef146270
                                      },
                                  });
                              }
-@@ -5311,6 +5321,10 @@ export class ClaudeAcpAgent {
+@@ -5311,6 +5315,10 @@
              settingSources: ["user", "project", "local"],
              ...(thinking !== undefined && { thinking }),
              ...userProvidedOptions,
@@ -36,7 +51,7 @@ index 0214a509eb5e7b777a69e4e34637941c275d27b1..403be02df66e25eee29e7d5bef146270
              ...(settings && { settings }),
              env,
              // Override certain fields that must be controlled by ACP
-@@ -5318,7 +5332,9 @@ export class ClaudeAcpAgent {
+@@ -5318,7 +5326,9 @@
              includePartialMessages: true,
              forwardSubagentText,
              mcpServers: {
@@ -47,7 +62,7 @@ index 0214a509eb5e7b777a69e4e34637941c275d27b1..403be02df66e25eee29e7d5bef146270
                  ...mcpServers,
                  ...(fileChangeAuditSupport
                      ? { [FILE_CHANGE_AUDIT_SERVER_NAME]: fileChangeAuditSupport.mcpServer }
-@@ -5329,6 +5345,16 @@ export class ClaudeAcpAgent {
+@@ -5329,6 +5339,16 @@
              allowDangerouslySkipPermissions: ALLOW_BYPASS,
              permissionMode: initialPermissionMode,
              canUseTool: this.canUseTool(sessionId),
@@ -64,7 +79,6 @@ index 0214a509eb5e7b777a69e4e34637941c275d27b1..403be02df66e25eee29e7d5bef146270
              // Forward MCP elicitation requests onto ACP elicitation. Only attached
              // when the client advertised support, so non-supporting clients keep the
              // SDK's default (auto-decline) behavior. (AskUserQuestion is handled in
-diff --git a/dist/settings.js b/dist/settings.js
 --- a/dist/settings.js
 +++ b/dist/settings.js
 @@ -88,6 +88,12 @@
