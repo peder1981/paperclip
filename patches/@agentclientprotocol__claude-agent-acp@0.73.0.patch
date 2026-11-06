@@ -1,6 +1,8 @@
+diff --git a/dist/acp-agent.js b/dist/acp-agent.js
+index 0214a50..7c19d9a 100644
 --- a/dist/acp-agent.js
 +++ b/dist/acp-agent.js
-@@ -2169,14 +2169,8 @@
+@@ -2169,14 +2169,8 @@ export class ClaudeAcpAgent {
                                  }
                                  else if (message.compact_result === "failed" && compactionInProgress) {
                                      compactionInProgress = false;
@@ -17,7 +19,7 @@
                                  }
                                  break;
                              }
-@@ -2922,9 +2916,19 @@
+@@ -2922,9 +2916,19 @@ export class ClaudeAcpAgent {
                                              amount: message.total_cost_usd,
                                              currency: "USD",
                                          },
@@ -40,7 +42,7 @@
                                      },
                                  });
                              }
-@@ -5311,6 +5315,10 @@
+@@ -5311,6 +5315,10 @@ export class ClaudeAcpAgent {
              settingSources: ["user", "project", "local"],
              ...(thinking !== undefined && { thinking }),
              ...userProvidedOptions,
@@ -51,7 +53,7 @@
              ...(settings && { settings }),
              env,
              // Override certain fields that must be controlled by ACP
-@@ -5318,7 +5326,9 @@
+@@ -5318,7 +5326,9 @@ export class ClaudeAcpAgent {
              includePartialMessages: true,
              forwardSubagentText,
              mcpServers: {
@@ -62,7 +64,7 @@
                  ...mcpServers,
                  ...(fileChangeAuditSupport
                      ? { [FILE_CHANGE_AUDIT_SERVER_NAME]: fileChangeAuditSupport.mcpServer }
-@@ -5329,6 +5339,16 @@
+@@ -5329,6 +5339,16 @@ export class ClaudeAcpAgent {
              allowDangerouslySkipPermissions: ALLOW_BYPASS,
              permissionMode: initialPermissionMode,
              canUseTool: this.canUseTool(sessionId),
@@ -79,18 +81,3 @@
              // Forward MCP elicitation requests onto ACP elicitation. Only attached
              // when the client advertised support, so non-supporting clients keep the
              // SDK's default (auto-decline) behavior. (AskUserQuestion is handled in
---- a/dist/settings.js
-+++ b/dist/settings.js
-@@ -88,6 +88,12 @@
-     async loadAllSettings() {
-         try {
-             const resolved = await resolveSettings({ cwd: this.cwd });
-+            const userPath = resolved.sources.find((entry) => entry.source === "user")?.path;
-+            for (const entry of resolved.sources) {
-+                if (userPath && entry.source === "project" && entry.path === userPath) {
-+                    entry.source = "user";
-+                }
-+            }
-             this.effective = filterEscalatingDefaultMode(resolved);
-         }
-         catch (error) {
