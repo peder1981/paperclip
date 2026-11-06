@@ -15598,6 +15598,38 @@ export function issueRoutes(
               },
             });
           }
+
+          // Agents mentioned via [label](agent://id) links or plain
+          // @uuid/@name tokens get a comment-only turn. The mention wake
+          // never transfers ownership or checkout; addWakeup dedup keeps the
+          // assignee's issue_commented wake when both apply.
+          const mentionedAgentIds = await svc.findMentionedAgents(
+            issue.companyId,
+            commentBody,
+          );
+          for (const mentionedAgentId of mentionedAgentIds) {
+            if (mentionedAgentId === actor.agentId) continue;
+            addWakeup(mentionedAgentId, {
+              source: "automation",
+              triggerDetail: "system",
+              reason: "issue_comment_mentioned",
+              payload: {
+                issueId: issue.id,
+                commentId: comment.id,
+                mutation: "comment.mention",
+              },
+              requestedByActorType: actor.actorType,
+              requestedByActorId: actor.actorId,
+              contextSnapshot: {
+                issueId: issue.id,
+                taskId: issue.id,
+                commentId: comment.id,
+                wakeCommentId: comment.id,
+                source: "comment.mention",
+                wakeReason: "issue_comment_mentioned",
+              },
+            });
+          }
         }
 
         const becameDone =
@@ -19052,6 +19084,39 @@ export function issueRoutes(
               },
             });
           }
+        }
+
+        // Agents mentioned in the comment body — via [label](agent://id)
+        // links or plain @uuid/@name tokens — get a comment-only turn. The
+        // mention wake never transfers ownership or checkout; the dedup in
+        // addWakeup keeps the assignee's own issue_commented wake when both
+        // apply to the same agent.
+        const mentionedAgentIds = await svc.findMentionedAgents(
+          currentIssue.companyId,
+          comment.body,
+        );
+        for (const mentionedAgentId of mentionedAgentIds) {
+          if (mentionedAgentId === actor.agentId) continue;
+          addWakeup(mentionedAgentId, {
+            source: "automation",
+            triggerDetail: "system",
+            reason: "issue_comment_mentioned",
+            payload: {
+              issueId: currentIssue.id,
+              commentId: comment.id,
+              mutation: "comment.mention",
+            },
+            requestedByActorType: actor.actorType,
+            requestedByActorId: actor.actorId,
+            contextSnapshot: {
+              issueId: currentIssue.id,
+              taskId: currentIssue.id,
+              commentId: comment.id,
+              wakeCommentId: comment.id,
+              source: "comment.mention",
+              wakeReason: "issue_comment_mentioned",
+            },
+          });
         }
 
         const becameDone =

@@ -1067,7 +1067,7 @@ describeEmbeddedPostgres("issueService.list participantAgentId", () => {
     expect(mentions).toEqual([localAgentId]);
   });
 
-  it("does not wake agents from raw @name text without a structured mention", async () => {
+  it("resolves raw @name text against same-company agents", async () => {
     const companyId = await seedAssignableAgentCompany();
     const localAgentId = randomUUID();
 
@@ -1076,6 +1076,20 @@ describeEmbeddedPostgres("issueService.list participantAgentId", () => {
     ]);
 
     await expect(svc.findMentionedAgents(companyId, "@LocalAgent please inspect this"))
+      .resolves.toEqual([localAgentId]);
+  });
+
+  it("resolves @uuid, @id-prefix and ignores unknown @tokens", async () => {
+    const companyId = await seedAssignableAgentCompany();
+    const localAgentId = randomUUID();
+
+    await db.insert(agents).values([
+      agentRow(companyId, { id: localAgentId, name: "LocalAgent" }),
+    ]);
+
+    await expect(svc.findMentionedAgents(companyId, `ping @${localAgentId} and @${localAgentId.slice(0, 8)}`))
+      .resolves.toEqual([localAgentId]);
+    await expect(svc.findMentionedAgents(companyId, "@nobody and user@host.com"))
       .resolves.toEqual([]);
   });
 

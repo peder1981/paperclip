@@ -103,6 +103,7 @@ import type {
 import {
   clampIssueRequestDepth,
   extractAgentMentionIds,
+  extractAgentAtMentionTokens,
   extractProjectMentionIds,
   issueCommentAuthorTypeSchema,
   issueCommentMetadataSchema,
@@ -13468,16 +13469,44 @@ export function issueService(db: Db) {
 
     findMentionedAgents: async (companyId: string, body: string) => {
       const explicitAgentMentionIds = extractAgentMentionIds(body);
-      if (explicitAgentMentionIds.length === 0) return [];
+      const atMentionTokens = extractAgentAtMentionTokens(body);
+      if (explicitAgentMentionIds.length === 0 && atMentionTokens.length === 0)
+        return [];
 
       const rows = await db
-        .select({ id: agents.id })
+        .select({ id: agents.id, name: agents.name })
         .from(agents)
         .where(eq(agents.companyId, companyId));
       const companyAgentIds = new Set(rows.map((agent) => agent.id));
-      return explicitAgentMentionIds.filter((agentId) =>
-        companyAgentIds.has(agentId),
+      const resolved = new Set(
+        explicitAgentMentionIds.filter((agentId) => companyAgentIds.has(agentId)),
       );
+
+      for (const token of atMentionTokens) {
+        const lower = token.toLowerCase();
+        if (isUuidLike(token)) {
+          if (companyAgentIds.has(lower)) resolved.add(lower);
+          continue;
+        }
+        // Hex prefixes of at least 8 chars resolve only when unambiguous.
+        if (/^[0-9a-f]{8,}$/i.test(token)) {
+          const matches = rows.filter((agent) => agent.id.startsWith(lower));
+          if (matches.length === 1) resolved.add(matches[0]!.id);
+          continue;
+        }
+        // Name tokens: exact case-insensitive name match wins; otherwise a
+        // unique first-word match ("@Chief" -> "Chief Tecnology Officer").
+        const exactName = rows.filter(
+          (agent) => (agent.name ?? "").toLowerCase() === lower,
+        );
+        const firstWord = rows.filter(
+          (agent) =>
+            (agent.name ?? "").toLowerCase().split(/\s+/)[0] === lower,
+        );
+        const matches = exactName.length > 0 ? exactName : firstWord;
+        if (matches.length === 1) resolved.add(matches[0]!.id);
+      }
+      return [...resolved];
     },
 
     findMentionedProjectIds: async (

@@ -254,6 +254,24 @@ export function extractAgentMentionIds(markdown: string): string[] {
   return [...ids];
 }
 
+// Plain-text `@token` mentions written by agents and users: `@<uuid>`,
+// `@<id-prefix>` or `@<name>`. Tokens must start and end alphanumeric so
+// sentence punctuation and emails like `user@domain.com` degrade to tokens
+// that simply resolve to nothing downstream.
+const AGENT_AT_MENTION_TOKEN_RE =
+  /@([A-Za-z0-9_][A-Za-z0-9_.-]*[A-Za-z0-9_]|[A-Za-z0-9_])/g;
+
+export function extractAgentAtMentionTokens(markdown: string): string[] {
+  if (!markdown) return [];
+  const tokens = new Set<string>();
+  const re = new RegExp(AGENT_AT_MENTION_TOKEN_RE);
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(markdown)) !== null) {
+    tokens.add(match[1]);
+  }
+  return [...tokens];
+}
+
 export function extractUserMentionIds(markdown: string): string[] {
   if (!markdown) return [];
   const ids = new Set<string>();

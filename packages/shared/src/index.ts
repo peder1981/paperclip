@@ -2557,6 +2557,7 @@ export {
   buildSkillMentionHref,
   buildUserMentionHref,
   extractAgentMentionIds,
+  extractAgentAtMentionTokens,
   extractPipelineMentions,
   extractProjectMentionIds,
   extractRoutineMentionIds,

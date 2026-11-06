@@ -776,11 +776,23 @@ describe("issue update comment wakeups", () => {
     await new Promise<void>((resolve) => setImmediate(resolve));
     expect(mockIssueService.addComment).toHaveBeenCalledTimes(1);
     expect(mockIssueService.addComment.mock.calls[0].slice(0, 2)).toEqual([existing.id, body]);
-    expect(mockHeartbeatService.wakeup).toHaveBeenCalledTimes(scenario === "board_comment" ? 1 : 0);
+    const mentionWake = expect.objectContaining({
+      reason: "issue_comment_mentioned",
+      contextSnapshot: expect.objectContaining({
+        issueId: existing.id,
+        wakeReason: "issue_comment_mentioned",
+        source: "comment.mention",
+      }),
+    });
     if (scenario === "board_comment") {
+      expect(mockHeartbeatService.wakeup).toHaveBeenCalledTimes(2);
       expect(mockHeartbeatService.wakeup).toHaveBeenCalledWith(ASSIGNEE_AGENT_ID, expect.objectContaining({
         reason: "issue_commented", contextSnapshot: expect.objectContaining({ issueId: existing.id }),
       }));
+      expect(mockHeartbeatService.wakeup).toHaveBeenCalledWith(MENTIONED_AGENT_ID, mentionWake);
+    } else {
+      expect(mockHeartbeatService.wakeup).toHaveBeenCalledTimes(1);
+      expect(mockHeartbeatService.wakeup).toHaveBeenCalledWith(MENTIONED_AGENT_ID, mentionWake);
     }
     expect(mockIssueService.update.mock.calls.every(([id]) => id === existing.id)).toBe(true);
   });
