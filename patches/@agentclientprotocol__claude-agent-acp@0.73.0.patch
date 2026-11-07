@@ -19,3 +19,35 @@ index 0214a50..1a012ab 100644
                                  }
                                  break;
                              }
+diff --git a/dist/tools.js b/dist/tools.js
+index 643ba03..9204e23 100644
+--- a/dist/tools.js
++++ b/dist/tools.js
+@@ -1175,6 +1175,16 @@ export function clearHookCallbacks(ownerId) {
+             unregisterHookCallback(toolUseID);
+     }
+ }
++const MAX_MODEL_TOOL_OUTPUT_CHARS = 20000;
++const TOOL_OUTPUT_HEAD_CHARS = 10000;
++const TOOL_OUTPUT_TAIL_CHARS = 9000;
++function truncateToolOutput(response) {
++    const text = typeof response === "string" ? response : JSON.stringify(response);
++    if (text === undefined || text.length <= MAX_MODEL_TOOL_OUTPUT_CHARS)
++        return undefined;
++    const omitted = text.length - TOOL_OUTPUT_HEAD_CHARS - TOOL_OUTPUT_TAIL_CHARS;
++    return `${text.slice(0, TOOL_OUTPUT_HEAD_CHARS)}\n\n[Tool output truncated: ${omitted} characters omitted to stay under ${MAX_MODEL_TOOL_OUTPUT_CHARS} characters]\n\n${text.slice(-TOOL_OUTPUT_TAIL_CHARS)}`;
++}
+ /* A callback for Claude Code that is called when receiving a PostToolUse hook */
+ export const createPostToolUseHook = (options) => async (input, toolUseID) => {
+     if (input.hook_event_name === "PostToolUse") {
+@@ -1193,6 +1203,10 @@ export const createPostToolUseHook = (options) => async (input, toolUseID) => {
+                 unregisterHookCallback(toolUseID);
+             }
+         }
++        const updatedToolOutput = truncateToolOutput(input.tool_response);
++        if (updatedToolOutput !== undefined) {
++            return { continue: true, hookSpecificOutput: { hookEventName: "PostToolUse", updatedToolOutput } };
++        }
+     }
+     return { continue: true };
+ };
