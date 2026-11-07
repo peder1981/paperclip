@@ -26,6 +26,8 @@ export interface ExecutionContinuationEnvelope {
     updatedAt: string;
     deleted: boolean;
     sourceTrust: unknown;
+    /** Set on the rendered copy when the body was cut for prompt size. */
+    bodyTruncated?: true;
   }>;
   /** Only direct human resolutions, projected from server-owned resolver columns. */
   humanResponses?: Array<{

@@ -3930,6 +3930,59 @@ describe("wake continuation comment ownership", () => {
     expect(prompt).not.toContain("comment-a at");
   });
 
+  it("windows a 174-comment thread of about 205k characters to the newest comments and the wake comment", () => {
+    const thread = Array.from({ length: 174 }, (_, index) => message(`comment-${index}`, `#${index} ${"x".repeat(1_150)}`));
+    const prompt = renderPaperclipWakePrompt({
+      reason: "issue_commented",
+      issue: { id: "issue-1", identifier: "PAP-1", title: "Task", description: null },
+      comments: [{ id: "comment-173", body: thread[173]!.body }],
+      commentWindow: { requestedCount: 1, includedCount: 1, missingCount: 0 },
+      fallbackFetchNeeded: false,
+      executionContinuation: continuation(thread),
+    });
+    expect(thread.reduce((total, item) => total + item.body.length, 0)).toBeGreaterThan(200_000);
+    expect(prompt).not.toContain('"id":"comment-0"');
+    expect(prompt).toContain('"id":"comment-154"');
+    expect(prompt).toContain('"id":"comment-173"');
+    expect(prompt).toContain("Message history is windowed for prompt size: 154 older comments are omitted");
+    expect(prompt.length).toBeLessThan(60_000);
+  });
+
+  it("keeps an older origin comment whole when the thread window omits it", () => {
+    const thread = Array.from({ length: 30 }, (_, index) => message(`comment-${index}`, `#${index} ${"y".repeat(3_000)}`));
+    const originBody = `Origin request ${"z".repeat(3_000)}`;
+    thread[2] = { ...thread[2]!, body: originBody };
+    const prompt = renderPaperclipWakePrompt({
+      reason: "issue_commented",
+      issue: { id: "issue-1", identifier: "PAP-1", title: "Task", description: null },
+      comments: [],
+      commentWindow: { requestedCount: 0, includedCount: 0, missingCount: 0 },
+      fallbackFetchNeeded: false,
+      executionContinuation: { ...continuation(thread), originCommentIds: ["comment-2"] },
+    });
+    expect(prompt).toContain(originBody);
+    expect(prompt).toContain('"id":"comment-2"');
+    expect(prompt).not.toContain('"id":"comment-3"');
+    expect(prompt).toContain('"bodyTruncated":true');
+  });
+
+  it("caps an origin comment at 8,000 characters and renders a wake comment once in full", () => {
+    const originBody = `Origin ${"o".repeat(9_000)}`;
+    const wakeBody = `Wake ${"w".repeat(9_000)}`;
+    const thread = [message("origin-1", originBody), message("wake-1", wakeBody)];
+    const prompt = renderPaperclipWakePrompt({
+      reason: "issue_commented",
+      issue: { id: "issue-1", identifier: "PAP-1", title: "Task", description: null },
+      comments: [{ id: "wake-1", body: wakeBody }],
+      commentWindow: { requestedCount: 1, includedCount: 1, missingCount: 0 },
+      fallbackFetchNeeded: false,
+      executionContinuation: { ...continuation(thread), originCommentIds: ["origin-1"] },
+    });
+    expect(prompt).not.toContain(originBody);
+    expect(prompt).toContain(originBody.slice(0, 8_000));
+    expect(prompt.split(wakeBody).length - 1).toBe(1);
+  });
+
   it("does not suppress a current comment absent from the rendered resume delta", () => {
     const prompt = renderPaperclipWakePrompt({
       reason: "issue_commented",
