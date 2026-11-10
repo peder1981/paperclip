@@ -8,6 +8,38 @@ import { applyIssueMonitorPolicyTransition, normalizeIssueExecutionPolicy, parse
 
 type NormalizedExecutionPolicy = ReturnType<typeof normalizeIssueExecutionPolicy>;
 
+// Monitores agendados por agentes precisam de limite de deferência: sem
+// timeoutAt/maxAttempts o agente pode encadear "vistas" indefinidamente.
+// O default injeta um timeout e troca a recuperação implícita (wake_owner,
+// que realimenta o ciclo) por escalate_to_board, que deixa o problema
+// visível para o operador. Board (actorType "user") não é limitado.
+export const AGENT_MONITOR_DEFAULT_TIMEOUT_MS = 4 * 60 * 60 * 1000;
+export const AGENT_MONITOR_MAX_TIMEOUT_MS = 24 * 60 * 60 * 1000;
+
+function boundAgentMonitorDeferral(
+  policy: NonNullable<NormalizedExecutionPolicy>,
+): NonNullable<NormalizedExecutionPolicy> {
+  const monitor = policy.monitor;
+  if (!monitor) return policy;
+  const nextCheckAtMs = Date.parse(monitor.nextCheckAt);
+  if (!Number.isFinite(nextCheckAtMs)) return policy;
+  const maxDeadlineMs = nextCheckAtMs + AGENT_MONITOR_MAX_TIMEOUT_MS;
+  const requestedMs = monitor.timeoutAt ? Date.parse(monitor.timeoutAt) : NaN;
+  const timeoutAt = new Date(
+    Number.isFinite(requestedMs)
+      ? Math.min(requestedMs, maxDeadlineMs)
+      : nextCheckAtMs + AGENT_MONITOR_DEFAULT_TIMEOUT_MS,
+  ).toISOString();
+  return {
+    ...policy,
+    monitor: {
+      ...monitor,
+      timeoutAt,
+      recoveryPolicy: monitor.recoveryPolicy ?? "escalate_to_board",
+    },
+  } as NonNullable<NormalizedExecutionPolicy>;
+}
+
 export function monitorPoliciesEqual(
   left: NormalizedExecutionPolicy | null,
   right: NormalizedExecutionPolicy | null,
@@ -22,8 +54,10 @@ export function applyActorMonitorScheduledBy(
   policy: NormalizedExecutionPolicy | null,
   actorType: "agent" | "user",
 ) {
+  const bounded =
+    actorType === "agent" && policy ? boundAgentMonitorDeferral(policy) : policy;
   return setIssueExecutionPolicyMonitorScheduledBy(
-    policy,
+    bounded,
     actorType === "user" ? "board" : "assignee",
   );
 }
