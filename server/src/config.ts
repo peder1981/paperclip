@@ -80,6 +80,8 @@ export interface Config {
   databaseBackupRetentionDays: number;
   databaseBackupDir: string;
   workspaceReaperCooldownDays: number;
+  issueScratchSweepRoots: string[];
+  issueScratchSweepGraceHours: number;
   serveUi: boolean;
   uiDevMiddleware: boolean;
   secretsProvider: SecretProvider;
@@ -292,6 +294,21 @@ export function loadConfig(): Config {
       && workspaceReaperCooldownDaysRaw >= 0
       ? workspaceReaperCooldownDaysRaw
       : 7;
+  // Raízes de diretórios de trabalho por issue criados pelos agentes
+  // (ex.: /var/lib/paperclip/tecnico). O sweeper remove subdiretórios nomeados
+  // como identificadores de issue (PREFIX-N) quando a issue está terminal e o
+  // diretório está parado além do grace period. Vazio = desabilitado.
+  const issueScratchSweepRoots = (process.env.PAPERCLIP_ISSUE_SCRATCH_SWEEP_ROOTS ?? "")
+    .split(":")
+    .map((root) => root.trim())
+    .filter((root) => root.length > 0);
+  const issueScratchSweepGraceHoursRaw = Number(
+    process.env.PAPERCLIP_ISSUE_SCRATCH_GRACE_HOURS,
+  );
+  const issueScratchSweepGraceHours =
+    Number.isFinite(issueScratchSweepGraceHoursRaw) && issueScratchSweepGraceHoursRaw >= 0
+      ? issueScratchSweepGraceHoursRaw
+      : 24;
   const bindValidationErrors = validateConfiguredBindMode({
     deploymentMode,
     deploymentExposure,
@@ -338,6 +355,8 @@ export function loadConfig(): Config {
     databaseBackupRetentionDays,
     databaseBackupDir,
     workspaceReaperCooldownDays,
+    issueScratchSweepRoots,
+    issueScratchSweepGraceHours,
     serveUi:
       process.env.SERVE_UI !== undefined
         ? process.env.SERVE_UI === "true"

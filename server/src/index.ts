@@ -104,6 +104,7 @@ import {
   createProductionLoginSessionReaperRuntime,
 } from "./services/device-login-reaper.js";
 import { createProductionSetupTokenReaper } from "./services/setup-token-reaper.js";
+import { createIssueScratchSweeper } from "./services/issue-scratch-sweeper.js";
 import { localAiLoginService } from "./services/local-ai-login.js";
 import { resolveWorktreeRunExecutionActivationState } from "./services/instance-settings.js";
 import {
@@ -1405,6 +1406,33 @@ async function startServerWithDatabaseTeardown(
         }));
     };
 
+    // Agentes criam diretórios de trabalho por issue em raízes compartilhadas
+    // (ex.: /var/lib/paperclip/tecnico/JMP-XXX) que nenhum lifecycle removia.
+    // O sweeper apaga o diretório quando a issue está terminal e o mtime do
+    // diretório passou do grace period. Desabilitado quando não há raízes
+    // configuradas (PAPERCLIP_ISSUE_SCRATCH_SWEEP_ROOTS).
+    const issueScratchSweeper = config.issueScratchSweepRoots.length > 0
+      ? createIssueScratchSweeper({
+          db: db as any,
+          roots: config.issueScratchSweepRoots,
+          graceMs: config.issueScratchSweepGraceHours * 60 * 60 * 1000,
+        })
+      : null;
+    const scheduleIssueScratchSweep = () => {
+      if (!issueScratchSweeper) return;
+      if (isIdleTaskDrainActive() || heartbeatSchedulerStopped) return;
+      trackHeartbeatSchedulerWork(issueScratchSweeper
+        .sweep()
+        .then((result) => {
+          if (!result.throttled && (result.deleted > 0 || result.errors > 0)) {
+            logger.info(result, "issue scratch-directory sweeper reclaimed terminal issue workspaces");
+          }
+        })
+        .catch((err) => {
+          logger.error({ err }, "issue scratch-directory sweeper failed");
+        }));
+    };
+
     // The restart-safe cleanup backstop for adapter login sessions. The
     // in-process five-minute timer stays the primary control. This reaper runs
     // on startup and on the scheduler interval. It deletes the login sandbox for
@@ -1712,6 +1740,7 @@ async function startServerWithDatabaseTeardown(
         scheduleGitHubConnectionEventPoll();
         scheduleGitHubConnectionContinuitySweep();
         scheduleTerminalWorkspaceSweep();
+        scheduleIssueScratchSweep();
         scheduleAdapterLoginReaperSweep();
         scheduleSetupTokenReaperSweep();
         scheduleEnvironmentLeaseCleanupSweep();
