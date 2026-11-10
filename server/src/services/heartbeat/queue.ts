@@ -1814,6 +1814,54 @@ export function createHeartbeatQueue(db: Db, dependencies: HeartbeatQueueDepende
       });
     }
 
+    // Deferred wakes whose issue already reached a terminal state can never
+    // be promoted: the issue execution is over and nothing will release a
+    // lock that no longer exists. Left alone they are rescanned on every
+    // tick forever. Cancel them so the queue drains.
+    const orphanedDeferredQueues = await db
+      .select({ id: agentWakeupRequests.id })
+      .from(agentWakeupRequests)
+      .innerJoin(
+        issues,
+        and(
+          eq(issues.companyId, agentWakeupRequests.companyId),
+          sql`${issues.id}::text = ${agentWakeupRequests.payload}->>'issueId'`,
+        ),
+      )
+      .where(
+        and(
+          eq(agentWakeupRequests.status, "deferred_issue_execution"),
+          inArray(issues.status, ["done", "cancelled"]),
+          cutoff ? gte(agentWakeupRequests.requestedAt, cutoff) : undefined,
+        ),
+      )
+      .limit(50);
+    if (orphanedDeferredQueues.length > 0) {
+      const cancelledAt = new Date();
+      await db
+        .update(agentWakeupRequests)
+        .set({
+          status: "cancelled",
+          finishedAt: cancelledAt,
+          error:
+            "issue reached a terminal state; deferred wake can no longer be delivered",
+          updatedAt: cancelledAt,
+        })
+        .where(
+          and(
+            inArray(
+              agentWakeupRequests.id,
+              orphanedDeferredQueues.map((wake) => wake.id),
+            ),
+            eq(agentWakeupRequests.status, "deferred_issue_execution"),
+          ),
+        );
+      logger.info(
+        { count: orphanedDeferredQueues.length },
+        "cancelled deferred wakes orphaned by terminal issues",
+      );
+    }
+
     // The cancellation marker is durable intent. Retry while its exact queue
     // is still deferred, including after a failed cleanup promotion or restart.
     // Normal admission still checks process ownership, leases, pauses, and scope.
