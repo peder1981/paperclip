@@ -13851,6 +13851,12 @@ export function issueRoutes(
         return;
       }
       let interruptedRunId: string | null = null;
+      // A reassignment made by an agent inside its own active run is an
+      // intentional self-stop (e.g. handing the task to a reviewer). Killing
+      // the caller before the mutation commits aborts the in-flight request
+      // and leaves a dead run with no ownership change; commit first and stop
+      // the run afterwards instead.
+      let deferredSelfStopRunId: string | null = null;
       const closedExecutionWorkspace =
         await getClosedIssueExecutionWorkspace(existing);
       const isAgentWorkUpdate =
@@ -14254,7 +14260,10 @@ export function issueRoutes(
           agentId: existing.assigneeAgentId,
         });
         const runToStopForReassignment = await resolveActiveIssueRun(existing);
-        if (runToStopForReassignment) {
+        if (runToStopForReassignment && req.actor.type === "agent" && actor.runId === runToStopForReassignment.id) {
+          interruptedRunId = runToStopForReassignment.id;
+          deferredSelfStopRunId = runToStopForReassignment.id;
+        } else if (runToStopForReassignment) {
           const cancelled = await heartbeat.cancelRun(
             runToStopForReassignment.id,
             "Cancelled before issue reassignment",
@@ -14619,6 +14628,25 @@ export function issueRoutes(
       if (!issue) {
         res.status(404).json({ error: "Issue not found" });
         return;
+      }
+      if (deferredSelfStopRunId) {
+        try {
+          await heartbeat.cancelRun(
+            deferredSelfStopRunId,
+            "Cancelled before issue reassignment",
+            {
+              errorCode: "issue_reassigned",
+              resultJson: { reassignmentStopConfirmed: true, issueMutationStopId },
+              eventMessage: "run cancelled before issue reassignment",
+              eventPayload: { issueId: existing.id },
+            },
+          );
+        } catch (selfStopError) {
+          logger.warn(
+            { err: selfStopError, runId: deferredSelfStopRunId, issueId: id },
+            "failed to stop actor's own run after committed reassignment",
+          );
+        }
       }
       for (const publication of postCommitActivityPublications)
         publishActivity(publication);
