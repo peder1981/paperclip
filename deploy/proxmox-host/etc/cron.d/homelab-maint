@@ -1,0 +1,3 @@
+# manutencao diaria e vigilancia horaria do homelab
+50 4 * * * root /usr/local/sbin/homelab-maint.sh maintain
+20 * * * * root /usr/local/sbin/homelab-maint.sh check

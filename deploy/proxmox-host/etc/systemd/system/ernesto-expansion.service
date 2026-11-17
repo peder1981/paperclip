@@ -1,0 +1,35 @@
+[Unit]
+Description=JuiceFS mount — ernesto-expansion
+Documentation=https://juicefs.com/docs/community/introduction/
+After=network.target ernesto-jfs.service
+RequiresMountsFor=/mnt/sdc2
+Wants=ernesto-jfs.service
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+[Service]
+Type=forking
+ExecStartPre=/bin/bash -c 'mkdir -p /mnt/jfs/ernesto-expansion'
+ExecStart=/usr/local/bin/juicefs mount \
+    -d \
+    --cache-dir /mnt/ernesto-data/juicefs-cache \
+    --cache-size 10240 \
+    --writeback \
+    --no-usage-report \
+    --log /var/log/juicefs-expansion.log \
+    sqlite3:///opt/juicefs/meta-expansion.db \
+    /mnt/jfs/ernesto-expansion
+ExecStartPost=/bin/bash -c '\
+    mkdir -p /mnt/ernesto-data/expansion && \
+    mount --bind /mnt/jfs/ernesto-expansion /mnt/ernesto-data/expansion || true'
+ExecStop=/bin/bash -c '\
+    umount -l /mnt/ernesto-data/expansion 2>/dev/null; \
+    umount -l /mnt/jfs/ernesto-expansion 2>/dev/null'
+Restart=on-failure
+RestartSec=15
+TimeoutStartSec=45
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

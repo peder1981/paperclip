@@ -1,0 +1,8 @@
+/var/log/agent-ops.log /var/log/agent-actions.log /var/log/agent-bench-*.log {
+    weekly
+    rotate 8
+    compress
+    missingok
+    notifempty
+    copytruncate
+}

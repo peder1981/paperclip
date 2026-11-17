@@ -1,0 +1,44 @@
+#!/bin/bash
+HOST="${SPARK_HOST:-127.0.0.1}"
+PORT="${SPARK_PORT:-8080}"
+API="http://${HOST}:${PORT}/v1"
+
+case "${1:-}" in
+    serve)
+        systemctl start spark
+        echo "Spark server iniciado"
+        ;;
+    stop)
+        systemctl stop spark
+        echo "Spark server parado"
+        ;;
+    restart)
+        systemctl restart spark
+        echo "Spark server reiniciado"
+        ;;
+    status)
+        systemctl status spark --no-pager
+        ;;
+    chat)
+        echo "Chat Spark (Ctrl+C para sair)"
+        while true; do
+            printf "\033[32m> \033[0m"
+            read -r line || break
+            [ -z "$line" ] && continue
+            curl -s -X POST "${API}/chat/completions"                 -H "Content-Type: application/json"                 -d "{\"model\":\"spark2.5\",\"messages\":[{\"role\":\"user\",\"content\":\"$line\"}],\"max_tokens\":2048}"                 | python3 -c "import sys,json; print(json.load(sys.stdin)['choices'][0]['message']['content'])"
+        done
+        ;;
+    run)
+        shift
+        curl -s -X POST "${API}/chat/completions"             -H "Content-Type: application/json"             -d "{\"model\":\"spark2.5\",\"messages\":[{\"role\":\"user\",\"content\":\"\"}],\"max_tokens\":4096}"             | python3 -c "import sys,json; print(json.load(sys.stdin)['choices'][0]['message']['content'])"
+        ;;
+    models)
+        curl -s "${API}/models" | python3 -m json.tool
+        ;;
+    health)
+        curl -s "${API}/health" && echo " ✅" || echo " ❌"
+        ;;
+    *)
+        echo "Uso: spark {serve|stop|restart|status|chat|run <prompt>|models|health}"
+        ;;
+esac

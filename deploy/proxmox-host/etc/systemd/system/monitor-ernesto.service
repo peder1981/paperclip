@@ -1,0 +1,7 @@
+[Unit]
+Description=Monitor LXC 101 (ernesto) services
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/monitor-ernesto.sh

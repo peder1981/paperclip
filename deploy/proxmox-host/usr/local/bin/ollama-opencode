@@ -1,0 +1,12 @@
+#!/bin/bash
+# Wrapper para usar Ollama via OpenCode
+
+RESPONSE=$(curl -s -X POST http://127.0.0.1:11434/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d "{
+    model: \"llama3.2:3b\",
+    messages: [{\"role\": \"user\", \"content\": \"$1\"}],
+    stream: false
+  }")
+
+echo "$RESPONSE" | jq -r '.choices[].message.content // .message.content // .response'

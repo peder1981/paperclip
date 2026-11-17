@@ -1,0 +1,15 @@
+[Unit]
+Description=Ernesto custom NAT rules (DNAT wt0+wlp2s0 → LXC 101)
+After=network-online.target netbird.service netfilter-persistent.service
+Wants=network-online.target
+Before=ernesto-jfs.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/ernesto-nat.sh
+RemainAfterExit=yes
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

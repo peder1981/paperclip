@@ -1,0 +1,3 @@
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+# Backup FAISS + config + jfs-meta → JuiceFS (sdb2)
+0 3 * * * root /usr/local/bin/backup-ernesto-data.sh >> /var/log/ernesto-data-backup.log 2>&1

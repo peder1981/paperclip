@@ -1,0 +1,3 @@
+#!/bin/bash
+# Delega mem0-list para LXC 101 (ernesto-rag)
+exec pct exec 101 -- /usr/local/bin/mem0-list "$@"

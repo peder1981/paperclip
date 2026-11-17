@@ -1,0 +1,14 @@
+[Unit]
+Description=Spark-X2.5 Inference Server
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt
+ExecStart=/opt/llama/llama-server     --model /opt/models/spark-x2.5-Q4_K_M.gguf     --host 0.0.0.0     --port 8080     --ctx-size 131072     --threads 16     --embedding     --log-disable
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,11 @@
+[Unit]
+Description=Enable KSM memory dedup
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c 'echo 1 > /sys/kernel/mm/ksm/run && echo 20000 > /sys/kernel/mm/ksm/pages_to_scan && echo 100 > /sys/kernel/mm/ksm/sleep_millisecs'
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

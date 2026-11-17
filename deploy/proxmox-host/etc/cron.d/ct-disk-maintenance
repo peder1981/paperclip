@@ -1,0 +1,4 @@
+# DESATIVADO 2026-11-14 — substituido pela janela de manutencao a cada 5 dias
+# (/etc/cron.d/homelab-maintenance-window). Mantido para execucao manual:
+#   /usr/local/sbin/ct-disk-maintenance.sh [--dry-run] [--ct <id>]
+#37 5 */3 * * root /usr/local/sbin/ct-disk-maintenance.sh

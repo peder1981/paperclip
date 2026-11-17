@@ -1,0 +1,28 @@
+[Unit]
+Description=JuiceFS mount — ernesto-fs em /mnt/jfs
+Documentation=https://juicefs.com/docs/community/introduction/
+RequiresMountsFor=/mnt/sdc2
+After=network.target
+StartLimitIntervalSec=120
+StartLimitBurst=4
+
+[Service]
+Type=forking
+# Data store em sdc2 (sdb2 1.6T), cache em sdb1 (ernesto-data)
+ExecStart=/usr/local/bin/juicefs mount \
+    -d \
+    --cache-dir /mnt/ernesto-data/juicefs-cache \
+    --cache-size 10240 \
+    --writeback \
+    --no-usage-report \
+    --log /var/log/juicefs.log \
+    sqlite3:///opt/juicefs/meta.db \
+    /mnt/jfs
+ExecStop=/usr/local/bin/juicefs umount /mnt/jfs
+Restart=on-failure
+RestartSec=15
+TimeoutStartSec=30
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

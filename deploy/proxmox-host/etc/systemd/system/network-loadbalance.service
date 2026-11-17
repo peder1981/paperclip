@@ -1,0 +1,14 @@
+[Unit]
+Description=Network Load Balancing
+After=network-online.target
+Wants=network-online.target wpa_supplicant.service netbird.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash -c "/sbin/ip route add default via 192.168.1.254 dev wlp2s0 metric 100 || true"
+ExecStart=/bin/bash -c "/sbin/ip route add default via 192.168.2.1 dev vmbr0 metric 100 || true"
+ExecStart=/bin/bash -c "/sbin/ip route add 100.121.53.0/28 dev wt0 metric 10 || true"
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

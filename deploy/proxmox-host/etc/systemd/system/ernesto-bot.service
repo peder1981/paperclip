@@ -1,0 +1,14 @@
+[Unit]
+Description=Ernesto Telegram Bot (Mem0 + OKF + FAISS)
+After=network.target ernesto-mem0.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/ernesto-rag
+ExecStart=/opt/ernesto-rag/.venv/bin/python3 /opt/ernesto-rag/ernesto_bot.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,3 @@
+#!/bin/bash
+for c in $(pct list | awk "NR>1 {print \$1}"); do pct fstrim $c >>/var/log/pve-fstrim.log 2>&1; done
+echo "$(date +%F\ %T) done" >> /var/log/pve-fstrim.log

@@ -1,0 +1,3 @@
+# Reclaim rotativo do thin pool pve/data (LXC)
+# privileged: live-trim toda noite; unprivileged: um por noite em rotacao
+15 4 * * * root /usr/local/sbin/ct-thin-trim.sh

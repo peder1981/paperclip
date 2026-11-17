@@ -1,0 +1,11 @@
+[Unit]
+Description=Ernesto Security Guardian
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /opt/ernesto-rag/security_monitor/guardian.sh
+WorkingDirectory=/opt/ernesto-rag
+
+[Install]
+WantedBy=multi-user.target

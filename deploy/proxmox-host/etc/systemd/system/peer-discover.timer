@@ -1,0 +1,13 @@
+[Unit]
+Description=Repete a descoberta mútua de peers periodicamente
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+# Espalha as execuções dos dois lados para não baterem juntas.
+RandomizedDelaySec=20s
+AccuracySec=10s
+Unit=peer-discover.service
+
+[Install]
+WantedBy=timers.target

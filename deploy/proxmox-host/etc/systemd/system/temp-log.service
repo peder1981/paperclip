@@ -1,0 +1,6 @@
+[Unit]
+Description=Registra temperaturas do host em /var/log/temp-monitor.csv
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/temp-log.sh

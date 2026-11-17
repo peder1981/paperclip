@@ -1,0 +1,3 @@
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+# Sync PBS primary (sdd2) → secondary (JuiceFS) — após pbs-daily das 02:00
+30 3 * * * root /usr/local/bin/pbs-sync-to-jfs.sh >> /var/log/pbs-sync-jfs.log 2>&1

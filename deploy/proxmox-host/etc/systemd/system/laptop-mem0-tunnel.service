@@ -1,0 +1,13 @@
+[Unit]
+Description=Tunel SSH reverso: mem0 LXC101 -> laptop-operador:19081
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/ssh -N -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o ExitOnForwardFailure=yes -R 127.0.0.1:19081:192.168.2.81:9081 operador@laptop-operador.netbird.cloud
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

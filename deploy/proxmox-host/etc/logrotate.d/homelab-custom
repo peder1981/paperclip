@@ -1,0 +1,15 @@
+# logs personalizados do host que nao tinham rotacao
+/var/log/proxmox-monitor.log /var/log/proxmox-monitor-ai.log /var/log/proxmox-daily.log /var/log/proxmox-weekly.log
+/var/log/proxmox-justatistic.log /var/log/proxmox-blu.log /var/log/proxmox-gescon.log
+/var/log/juicefs.log /var/log/guardian-cron.log /var/log/ct-thin-trim.log /var/log/pve-fstrim.log
+/var/log/ernesto-backup-jfs.log /var/log/ernesto-data-backup.log /var/log/pbs-sync-jfs.log
+/var/log/granite-auto-improve.log /var/log/homelab-maint.log {
+    weekly
+    rotate 8
+    size 5M
+    compress
+    delaycompress
+    copytruncate
+    missingok
+    notifempty
+}

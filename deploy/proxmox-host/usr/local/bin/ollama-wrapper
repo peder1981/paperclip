@@ -1,0 +1,20 @@
+#!/bin/bash
+# Wrapper provider para Ollama usando curl
+# Substitui o SDK quando há problemas de compatibilidade
+
+MODEL="${1:-llama3.2:1b}"
+PROMPT="$2"
+
+RESPONSE=$(curl -s -X POST http://127.0.0.1:11434/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  --data-binary "{
+    model: \"$MODEL\",
+    messages: [{\"role\": \"user\", \"content\": \"$PROMPT\"}],
+    stream: false,
+    options: {
+      num_ctx: 4096,
+      num_predict: 256
+    }
+  }")
+
+echo "$RESPONSE" | jq -r '.choices[].message.content // .message.content // .response' 2>/dev/null

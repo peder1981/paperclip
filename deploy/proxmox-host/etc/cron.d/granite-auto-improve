@@ -1,0 +1,7 @@
+# Auto-aprimoramento contínuo do granite-bash-ninja:3b
+# Roda 3x ao dia em horarios alternados (8h, 14h, 22h)
+# Sorteia topicos aleatorios do acervo e testa o modelo
+#[jurstat-migra 2026-09-06] treino pausado p/ liberar RAM (lxc103): 0 8,14,22 * * * root cd /root/ernesto-stack/treino-bash-toolbox-backup && python3 auto_improve.py --topics 3 >> /var/log/granite-auto-improve.log 2>&1
+
+# Limpeza do log uma vez por semana (domingo 3h)
+#[jurstat-migra 2026-09-06] 0 3 * * 0 root truncate -s 0 /var/log/granite-auto-improve.log

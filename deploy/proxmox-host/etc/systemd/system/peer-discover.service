@@ -1,0 +1,18 @@
+[Unit]
+Description=Descoberta mutua de peers (LAN + NetBird bootstrap)
+After=network-online.target
+Wants=network-online.target
+FailureAction=none
+
+[Service]
+Type=oneshot
+Environment=PEER_SSH=operador@laptop-operador.netbird.cloud
+Environment=MY_NAME=homelab
+Environment=PEER_NAME=laptop
+Environment=UPDATE_CMD=/usr/local/bin/update-hosts.sh
+ExecStart=/usr/local/bin/peer-discover.sh
+RemainAfterExit=yes
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target

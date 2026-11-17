@@ -1,0 +1,9 @@
+[Unit]
+Description=GEBAN NAT hairpin LXC106:8080
+After=network-online.target
+[Service]
+Type=oneshot
+ExecStart=/root/geban-nat.sh
+RemainAfterExit=yes
+[Install]
+WantedBy=multi-user.target

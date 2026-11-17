@@ -1,0 +1,3 @@
+# Atualizacao automatica diaria - rodar apt update && apt upgrade -y
+# Desativar: comentar a linha abaixo ou rm /etc/cron.d/daily-upgrade
+0 4 * * * root /usr/bin/apt update -qq 2>/dev/null && /usr/bin/apt upgrade -y -qq 2>/dev/null || logger -p cron.err "daily-upgrade: apt update/upgrade falhou"

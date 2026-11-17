@@ -1,0 +1,3 @@
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+# ChromaDB backup via JuiceFS (substituido em 2026-06-10)
+30 4 * * * root /usr/local/bin/backup-chromadb-jfs.sh >> /var/log/ernesto-backup-jfs.log 2>&1

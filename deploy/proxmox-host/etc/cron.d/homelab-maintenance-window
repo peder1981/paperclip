@@ -1,0 +1,5 @@
+# Janela de manutencao de disco a cada 5 dias — 03:30
+# Fases: limpeza interna CTs -> blu wal -> stop-trim unpriv + live-trim + raw
+# -> verificacao. Tempo estimado: 20-45min. CTs unpriv ficam ~1-3min offline.
+# Log: /var/log/homelab-maintenance-window.log
+30 3 */5 * * root /usr/local/sbin/homelab-maintenance-window.sh

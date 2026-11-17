@@ -1,0 +1,51 @@
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+# ============================================
+# Proxmox Homelab Monitoring Crontab
+# Last updated: 2026-09-07
+# ============================================
+
+# ─── Health Checks (A cada 5 minutos) ───
+*/5 * * * * /usr/local/bin/monitor-proxmox.sh --full >> /var/log/proxmox-monitor.log 2>&1
+
+# ─── AI Analysis (A cada 30 minutos) ───
+*/30 * * * * /usr/local/bin/monitor-proxmox.sh --full --ai >> /var/log/proxmox-monitor-ai.log 2>&1
+
+# ─── Quick Status (4x ao dia) ───
+0 0,6,12,18 * * * /usr/local/bin/monitor-proxmox.sh --quick >> /var/log/proxmox-daily.log 2>&1
+
+# ─── Daily Report (08:00 todos os dias) ───
+0 8 * * * /usr/local/bin/monitor-proxmox.sh --full --report >> /var/log/proxmox-daily.log 2>&1
+
+# ─── Weekly Summary (Segundas às 09:00) ───
+0 9 * * 1 /usr/local/bin/monitor-proxmox.sh --full --report >> /var/log/proxmox-weekly.log 2>&1
+
+# ─── Log Rotation (1º de cada mês às 03:00) ───
+0 3 1 * * find /var/log -name proxmox-*.log -mtime +30 -delete 2>/dev/null
+
+# ─── Backup de Config (Diário às 04:00) ───
+0 4 * * * tar czf /root/backups/monitor-config-$(date +%Y%m%d).tar.gz /etc/telegram-notify.conf /etc/proton-mail.conf /usr/local/bin/monitor-proxmox.sh 2>/dev/null || true
+
+# ============================================
+# Existing Jobs (mantidos)
+# ============================================
+*/5 * * * * /opt/ernesto-rag/security_monitor/guardian.sh >> /var/log/guardian-cron.log 2>&1
+
+# ============================================
+# Justatistic Ledger Monitoring (LXC 103)
+# ============================================
+*/10 * * * * /usr/local/bin/monitor-justatistic-ledger.sh >> /var/log/proxmox-justatistic.log 2>&1
+# DESATIVADO 2026-10-12 (risco de descarte de blocos): */3 * * * * /usr/sbin/pct fstrim 103 >> /var/log/pct-fstrim-103.log 2>&1
+
+# ============================================
+# Blu Monitoring (LXC 104) — espelho do 103
+# ============================================
+*/10 * * * * /usr/local/bin/monitor-blu.sh >> /var/log/proxmox-blu.log 2>&1
+# DESATIVADO 2026-10-12 (risco de descarte de blocos): */3 * * * * /usr/sbin/pct fstrim 104 >> /var/log/pct-fstrim-104.log 2>&1
+# AGENTE-OPS (standby — ativar após warmup validado Task 7):
+0 * * * * flock -n /tmp/agent-ops.lock python3 /opt/agent-ops/loop.py --live >> /var/log/agent-ops.log 2>&1
+*/10 * * * * /usr/local/bin/monitor-gescon.sh >> /var/log/proxmox-gescon.log 2>&1
+30 3 * * 0 /usr/local/bin/pve-fstrim-all
+30 4 * * * /usr/local/bin/pve-daily-hygiene.sh
+45 4 * * * /usr/local/bin/tecnico-prune.sh
+*/5 * * * * /usr/local/bin/jfs-migration-watch.sh
+*/15 * * * * /usr/local/bin/monitor-pool.sh
