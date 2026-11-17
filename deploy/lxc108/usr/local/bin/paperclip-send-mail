@@ -1,0 +1,73 @@
+#!/usr/bin/env python3
+# Usage: paperclip-send-mail <to> <subject> <body-file> [--attach <file>]...
+# Body must be a regular file inside /var/lib/paperclip/outbox (no symlinks). Sender is fixed.
+import smtplib, ssl, sys, os, email.message, mimetypes
+from email.utils import formatdate, make_msgid
+
+OUTBOX = "/var/lib/paperclip/outbox/"
+TECNICO = "/var/lib/paperclip/tecnico/"
+SENDER = "caixa-projetos@example.invalid"
+
+if len(sys.argv) < 4:
+    sys.exit("usage: paperclip-send-mail <to> <subject> <body-file> [--attach <file>]...")
+
+to, subject, body_file = sys.argv[1], sys.argv[2], sys.argv[3]
+
+# Parse --attach flags
+attachments = []
+i = 4
+while i < len(sys.argv):
+    if sys.argv[i] == "--attach" and i + 1 < len(sys.argv):
+        attachments.append(sys.argv[i + 1])
+        i += 2
+    else:
+        i += 1
+
+if os.path.islink(body_file):
+    sys.exit("refused: symlink body")
+real = os.path.realpath(body_file)
+if not real.startswith(OUTBOX) or not os.path.isfile(real):
+    sys.exit("refused: body must be a file inside " + OUTBOX)
+
+env = {}
+for line in open("/etc/paperclip-mail.env"):
+    if "=" in line and not line.startswith("#"):
+        k, v = line.strip().split("=", 1)
+        env[k] = v.strip().strip(chr(34)).strip(chr(39))
+
+msg = email.message.EmailMessage()
+msg["From"] = SENDER
+msg["To"] = to
+msg["Subject"] = subject
+msg["Reply-To"] = "caixa-projetos@example.invalid"
+msg["Date"] = formatdate(localtime=True)
+msg["Message-ID"] = make_msgid(domain="pm.me")
+msg.set_content(open(real, encoding="utf-8").read())
+
+for att_path in attachments:
+    att_real = os.path.realpath(att_path)
+    if not os.path.isfile(att_real):
+        continue
+    if not (att_real.startswith(OUTBOX) or att_real.startswith(TECNICO) or att_real.startswith("/var/lib/paperclip/")):
+        continue
+    ctype, _ = mimetypes.guess_type(att_real)
+    if ctype is None:
+        ctype = "application/octet-stream"
+    maintype, subtype = ctype.split("/", 1)
+    with open(att_real, "rb") as f:
+        data = f.read()
+    msg.add_attachment(data, maintype=maintype, subtype=subtype,
+                       filename=os.path.basename(att_real))
+
+ctx = ssl.create_default_context()
+ctx.check_hostname = False
+ctx.verify_mode = ssl.CERT_NONE
+s = smtplib.SMTP("127.0.0.1", 1025, timeout=30)
+s.ehlo()
+s.starttls(context=ctx)
+s.ehlo()
+s.login(env["MAIL_IMAP_USER"], env["MAIL_IMAP_PASS"])
+s.send_message(msg, from_addr=SENDER, to_addrs=[to])
+s.quit()
+att_names = [os.path.basename(a) for a in attachments if os.path.isfile(os.path.realpath(a))]
+print(f"sent to {to}" + (f" ({len(att_names)} anexo(s): {', '.join(att_names)})" if att_names else ""))

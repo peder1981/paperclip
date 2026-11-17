@@ -1,0 +1,10 @@
+*/15 * * * * /usr/local/bin/paperclip-verify >/dev/null 2>&1
+7,22,37,52 * * * * DRY=0 /usr/local/bin/paperclip-manager >/dev/null 2>&1
+3,18,33,48 * * * * /usr/local/bin/paperclip-deliver >/dev/null 2>&1
+*/10 * * * * /usr/local/bin/imap-watchdog.sh
+*/10 * * * * /usr/local/bin/paperclip-supervisor.sh
+0 */2 * * * python3 /var/lib/paperclip/mail-digest/jmp30_fetch.py >> /var/lib/paperclip/mail-digest/cron.log 2>
+9,24,39,54 * * * * /usr/local/bin/paperclip-routine-dedupe.sh
+4,19,34,49 * * * * /usr/local/bin/paperclip-bridge-guard.sh
+0 */6 * * * systemctl restart protonmail-bridge.service
+*/15 * * * * /usr/local/bin/guardian-watch >> /var/lib/paperclip/guardian/watch.log 2>&1

@@ -1,0 +1,11 @@
+#!/usr/bin/env python3
+# paperclip-notify "<mensagem>": envia aviso ao operador pelo bot do Telegram.
+import sys, re, urllib.request, urllib.parse
+tg = {}
+for l in open("/etc/paperclip-telegram.env"):
+    m = re.match(r"([A-Z_]+)=(.+)", l.strip())
+    if m: tg[m.group(1)] = m.group(2).strip().strip('"').strip("'")
+msg = " ".join(sys.argv[1:])[:3500]
+if not msg: sys.exit(2)
+data = urllib.parse.urlencode({"chat_id": tg["TELEGRAM_ALLOWED_USER_ID"], "text": msg}).encode()
+urllib.request.urlopen("https://api.telegram.org/bot%s/sendMessage" % tg["TELEGRAM_BOT_TOKEN"], data=data, timeout=15)

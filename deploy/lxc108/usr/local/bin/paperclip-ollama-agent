@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Agente reserva Paperclip (process adapter) -> OpenCode CLI -> Ollama local.
+# Recebe task via PAPERCLIP_CONNECTION_INSTRUCTIONS_FILE (json) e roda opencode
+# com as instrucoes do agente no workdir. Exit code do opencode e repassado.
+set -u
+MODEL="${OLLAMA_MODEL:-ollama/granite4.1:8b}"
+WORKDIR="${PAPERCLIP_WORKDIR:-/var/lib/paperclip/instances/default/companies/c9a85ff4-4643-4105-a6e5-0c6e54e3aea8/agents/49671c76-ceb9-4aec-ba71-bde2995c1721/instructions}"
+PROMPT_FILE="${PAPERCLIP_CONNECTION_INSTRUCTIONS_FILE:-}"
+TASK="Execute a tarefa atribuida a voce. Use a CLI paperclip (PAPERCLIP_API_KEY no env) para ler o contexto do issue, fazer o trabalho conforme AGENTS.md, comentar e fechar. Nunca imprima segredos."
+if [ -n "$PROMPT_FILE" ] && [ -f "$PROMPT_FILE" ]; then
+  TASK="$TASK Instrucoes da conexao em $PROMPT_FILE (leia com cat se precisar)."
+fi
+cd "$WORKDIR" || exit 3
+exec /usr/local/bin/opencode run --format json --model "$MODEL" --dir "$WORKDIR" "$TASK"

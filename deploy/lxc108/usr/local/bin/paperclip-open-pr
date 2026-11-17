@@ -1,0 +1,12 @@
+#!/bin/sh
+# Usage: paperclip-open-pr <branch paperclip/...> <title> <body-file>
+# Opens a PR from a paperclip/* branch into main. Needs a token with Pull requests: write.
+set -eu
+REPO=peder1981/my-advpl-project
+TOKEN_FILE=/var/lib/paperclip/.config/git/pr-token
+branch="$1"; title="$2"; body_file="$3"
+case "$branch" in paperclip/*) ;; *) echo "refused: branch must start with paperclip/" >&2; exit 1 ;; esac
+[ -r "$TOKEN_FILE" ] || { echo "error: token not configured at $TOKEN_FILE" >&2; exit 2; }
+[ -s "$body_file" ] || { echo "error: empty body file" >&2; exit 1; }
+payload=$(python3 -c "import json,sys; print(json.dumps({\"title\":sys.argv[1],\"head\":sys.argv[2],\"base\":\"main\",\"body\":open(sys.argv[3],encoding=\"utf-8\").read()}))" "$title" "$branch" "$body_file")
+curl -sS -X POST -H "Authorization: Bearer $(cat $TOKEN_FILE)" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/$REPO/pulls" -d "$payload" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get(\"html_url\") or d)"

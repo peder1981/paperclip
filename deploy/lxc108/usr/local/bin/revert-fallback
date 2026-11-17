@@ -1,0 +1,23 @@
+#!/bin/bash
+# Reversão automática do fallback: volta Dev->sonnet, Secretina->agnes, Especialista->haiku quando quota Claude volta
+K=$(sed -n 's/^PAPERCLIP_BOARD_API_KEY=//p' /etc/paperclip-telegram.env)
+API=http://127.0.0.1:3100
+LOG=/var/lib/paperclip/fallback-revert.log
+SUB="{\"provider\":\"anthropic\",\"method\":\"subscription\",\"mode\":\"responsible_user\"}"
+AGNES="{\"provider\":\"openai\",\"method\":\"api_key\",\"mode\":\"shared\",\"connectionId\":\"4d055877-a60d-48fc-835c-6c5328f3130c\",\"grantId\":\"f39e8146-c334-4c25-b6cb-460292df32fb\"}"
+patch() {
+  curl -s -m 120 -X PATCH "$API/api/agents/$1" -H "Authorization: Bearer $K" -H "Content-Type: application/json" -d "$2" -o /dev/null -w "%{http_code}"
+}
+echo "$(date -Iseconds) revert-fallback start" >> $LOG
+# Dev Senior -> claude_local + sonnet
+echo "dev:$(patch 8d9f3cc1-6f9a-48a2-8827-b6ca8852b723 "{\"adapterType\":\"claude_local\",\"adapterConfig\":{\"model\":\"claude-sonnet-5-5\"},\"runtimeConfig\":{\"aiConnection\":$SUB}}")" >> $LOG
+# Secretina -> agnes
+echo "sec:$(patch 49671c76-ceb9-4aec-ba71-bde2995c1721 "{\"adapterConfig\":{\"model\":\"paperclip/agnes-2.5-flash\"},\"runtimeConfig\":{\"aiConnection\":$AGNES}}")" >> $LOG
+# Especialista -> claude_local + haiku
+echo "esp:$(patch d2b3f080-c6f0-4be0-afb8-12635695c993 "{\"adapterType\":\"claude_local\",\"adapterConfig\":{\"model\":\"claude-haiku-5-5\"},\"runtimeConfig\":{\"aiConnection\":$SUB}}")" >> $LOG
+echo "$(date -Iseconds) revert-fallback done" >> $LOG
+# Acorda os agentes para retomar a fila no modelo primario
+for A in 8d9f3cc1-6f9a-48a2-8827-b6ca8852b723 49671c76-ceb9-4aec-ba71-bde2995c1721 d2b3f080-c6f0-4be0-afb8-12635695c993 5fc4801c-7970-4079-bba8-33713442e51d; do
+  curl -s -m 15 -X POST "$API/api/agents/$A/wakeup" -H "Authorization: Bearer $K" -H "Content-Type: application/json" -d "{\"reason\":\"Modelo primario restabelecido — retomar fila\"}" -o /dev/null -w "wake-$A:%{http_code} " >> $LOG
+done
+echo "" >> $LOG

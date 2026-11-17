@@ -1,0 +1,58 @@
+#!/bin/bash
+# paperclip-autofallback: roda nunca para. Claude fora -> agnes; Claude volta -> titular.
+K=$(sed -n 's/^PAPERCLIP_BOARD_API_KEY=//p' /etc/paperclip-telegram.env)
+API=http://127.0.0.1:3100; CID=c9a85ff4-4643-4105-a6e5-0c6e54e3aea8
+LOG=/var/lib/paperclip/autofallback.log; LOCK=/tmp/autofb.lock
+exec 9>$LOCK; flock -n 9 || exit 0
+python3 - <<'PYEOF'
+import json,urllib.request,time
+K=[l.split("=",1)[1].strip() for l in open("/etc/paperclip-telegram.env") if l.startswith("PAPERCLIP_BOARD_API_KEY=")][0]
+API="http://127.0.0.1:3100"; CID="c9a85ff4-4643-4105-a6e5-0c6e54e3aea8"
+AG={"provider":"openai","method":"api_key","mode":"shared","connectionId":"4d055877-a60d-48fc-835c-6c5328f3130c","grantId":"f39e8146-c334-4c25-b6cb-460292df32fb"}
+SUB={"provider":"anthropic","method":"subscription","mode":"responsible_user"}
+TITULAR={
+ "8d9f3cc1-6f9a-48a2-8827-b6ca8852b723": "claude-haiku-5-5",
+ "d2b3f080-c6f0-4be0-afb8-12635695c993": "claude-haiku-5-5",
+ "49671c76-ceb9-4aec-ba71-bde2995c1721": "claude-haiku-5-5",
+ "6a50f8c5-8e0b-4dfb-9488-95490d69fe78": "claude-haiku-5-5",
+}
+STATE="/var/lib/paperclip/autofb-state.json"
+def req(p,m="GET",b=None,t=60):
+    r=urllib.request.Request(API+p,data=(json.dumps(b).encode() if b else None),method=m,headers={"Authorization":"Bearer "+K,"Content-Type":"application/json"})
+    try: return json.loads(urllib.request.urlopen(r,timeout=t).read())
+    except Exception as e: return {"_err":str(e),"code":getattr(e,"code",None)}
+def log(m): open("/var/lib/paperclip/autofallback.log","a").write(f"{time.strftime('%Y-%m-%dT%H:%M:%S')} {m}\n")
+try: st=json.load(open(STATE))
+except: st={"fallback":False}
+agents={a["id"]:a for a in req(f"/api/companies/{CID}/agents") if isinstance(a,dict)}
+runs=req(f"/api/companies/{CID}/heartbeat-runs?limit=12")
+recent=[r for r in runs if isinstance(r,dict)]
+fails=[r for r in recent if r.get("status")=="failed"]
+# sinal de quota: >=3 fails consecutivos de agentes claude_local
+claude_fail=sum(1 for r in fails[:6] if (agents.get(r.get("agentId",""),{}).get("adapterType"))=="claude_local")
+now=time.time()
+if not st["fallback"] and claude_fail>=3:
+    st["fallback"]=True; st["since"]=now
+    for aid in TITULAR:
+        a=agents.get(aid,{})
+        if a.get("adapterType")!="claude_local": continue
+        r=req(f"/api/agents/{aid}","PATCH",{"adapterType":"opencode_local","adapterConfig":{"model":"paperclip/agnes-2.5-flash","runner":"legacy","helloProbeTimeoutSec":120},"runtimeConfig":{"aiConnection":AG}},t=180)
+        log(f"FALLBACK {aid[:8]} -> agnes rc={r.get('_err','ok')}")
+    log("fallback ON (quota Claude esgotada)")
+elif st["fallback"]:
+    # probe: o primeiro agente volta pro titular e testa um run? probe barato: verifica se novos fails pararam — usa run succeeded recente em claude... melhor: testa um agente canario
+    last=st.get("canary",0)
+    if now-last>900:
+        st["canary"]=now
+        aid=list(TITULAR)[0]
+        r=req(f"/api/agents/{aid}","PATCH",{"adapterType":"claude_local","adapterConfig":{"model":TITULAR[aid]},"runtimeConfig":{"aiConnection":SUB}},t=180)
+        if r.get("_err") or r.get("error"):
+            log(f"canary fail (claude ainda fora): {str(r.get('_err') or r.get('error'))[:100]}")
+        else:
+            for a2,m2 in TITULAR.items():
+                if a2==aid: continue
+                req(f"/api/agents/{a2}","PATCH",{"adapterType":"claude_local","adapterConfig":{"model":m2},"runtimeConfig":{"aiConnection":SUB}},t=180)
+            st["fallback"]=False
+            log("fallback OFF — todos revertidos ao titular")
+json.dump(st,open(STATE,"w"))
+PYEOF

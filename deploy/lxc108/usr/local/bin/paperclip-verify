@@ -1,0 +1,89 @@
+#!/bin/bash
+# paperclip-verify: auditoria completa — nada para, nada quebra em silencio.
+# Verifica: servicos, agentes, issues, quota, metal. Usa d1 p/ casos ambiguos.
+K=$(sed -n 's/^PAPERCLIP_BOARD_API_KEY=//p' /etc/paperclip-telegram.env)
+API=http://127.0.0.1:3100; CID=c9a85ff4-4643-4105-a6e5-0c6e54e3aea8
+D1=http://192.168.2.194:11435/decide
+LOG=/var/lib/paperclip/verify.log; LOCK=/tmp/verify.lock
+exec 9>$LOCK; flock -n 9 || exit 0
+python3 - <<'PYEOF'
+import json,urllib.request,time,subprocess
+K=[l.split("=",1)[1].strip() for l in open("/etc/paperclip-telegram.env") if l.startswith("PAPERCLIP_BOARD_API_KEY=")][0]
+API="http://127.0.0.1:3100"; CID="c9a85ff4-4643-4105-a6e5-0c6e54e3aea8"; D1="http://192.168.2.194:11435/decide"
+def req(p,m="GET",b=None,t=30):
+    r=urllib.request.Request(API+p,data=(json.dumps(b).encode() if b else None),method=m,headers={"Authorization":"Bearer "+K,"Content-Type":"application/json"})
+    try: return json.loads(urllib.request.urlopen(r,timeout=t).read())
+    except Exception as e: return {"_err":str(e)}
+def d1(text,q):
+    try:
+        r=urllib.request.Request(D1,data=json.dumps({"text":text[:2500],"question":q}).encode(),headers={"Content-Type":"application/json"})
+        return json.loads(urllib.request.urlopen(r,timeout=30).read())
+    except: return {"verdict":"unknown"}
+def sh(c): return subprocess.run(c,shell=True,capture_output=True,text=True,timeout=15).stdout.strip()
+A=[]  # alertas/acoes
+# 1. SERVICOS criticos
+for s in ("paperclip","ollama-tunnel","protonmail-bridge"):
+    if sh(f"systemctl is-active {s}")!="active":
+        sh(f"systemctl restart {s}")
+        A.append(f"SERVICE {s} reiniciado")
+try:
+    urllib.request.urlopen(urllib.request.Request(D1,data=json.dumps({"text":"t","question":"ok?"}).encode(),headers={"Content-Type":"application/json"}),timeout=10)
+except Exception:
+    A.append("D1-decide endpoint fora — verificar host 192.168.2.194:11435")
+# 2. AGENTES: terminado/error com issues abertas -> alerta
+agents={a["id"]:a for a in req(f"/api/companies/{CID}/agents") if isinstance(a,dict)}
+issues=[i for i in req(f"/api/companies/{CID}/issues?limit=1000") if isinstance(i,dict)]
+open_=[i for i in issues if i.get("status") in ("todo","in_progress","blocked","in_review")]
+for i in open_:
+    a=agents.get(i.get("assigneeAgentId") or "")
+    if a and a.get("status") in ("terminated","dead"):
+        A.append(f"DEAD-ASSIGNEE {i.get('identifier')} — dono {a.get('name')} terminado, reatribuir")
+# 3. STALE com d1 (>2h sem atividade = suspeito real)
+now=time.time()
+for i in open_:
+    upd=i.get("updatedAt","")
+    try: h=(now-time.mktime(time.strptime(upd[:19],"%Y-%m-%dT%H:%M:%S")))/3600
+    except: h=0
+    if h>2 and i.get("status") in ("in_progress","todo"):
+        v=d1(f"issue {i.get('identifier')} '{(i.get('title') or '')[:80]}' parada ha {h:.0f}h","Ha problema real ou e espera legitima?")
+        if v.get("verdict")=="no":
+            A.append(f"STALE-ALERT {i.get('identifier')} parada {h:.0f}h sem motivo (d1 no)")
+# 4. Metal nao roda ha >20min = falha do scheduler
+import os
+try: mtime=os.path.getmtime("/var/lib/paperclip/manager.log")
+except: mtime=0
+if now-mtime>1200: A.append("METAL-QUIETO ha >20min — verificar timer/execucao manual")
+# 4.5 Agentes em estado error/terminating travado
+for a in agents.values():
+    st=a.get("status","")
+    if st=="error":
+        A.append(f"AGENT-ERROR {a.get('name')} em estado error — verificar runs")
+    if st=="terminating":
+        A.append(f"AGENT-STUCK {a.get('name')} preso em terminating")
+# 4.6 Recovery/mensagens salvas nao processadas (issues com pending)
+for i in open_:
+    pe=i.get("pendingExecutions") or i.get("savedMessages") or []
+    if pe:
+        A.append(f"RECOVERY {i.get('identifier')} tem {len(pe)} msgs salvas pendentes")
+# 5. Quota: se fallback ON ha >24h, alertar
+try: st=json.load(open("/var/lib/paperclip/autofb-state.json"))
+except: st={}
+if st.get("fallback") and now-st.get("since",0)>86400:
+    A.append("FALLBACK ha >24h — Claude nao volta?")
+out=f"{time.strftime('%Y-%m-%dT%H:%M:%S')} checks=5 alertas={len(A)}\n"+"\n".join(A)+"\n"
+open("/var/lib/paperclip/verify.log","a").write(out)
+# Alerta Telegram se falha critica
+crit=[a for a in A if a.startswith(("SERVICE","DEAD-ASSIGNEE","METAL-QUIETO","D1-decide","AGENT-ERROR","AGENT-STUCK"))]
+if crit:
+    try:
+        import urllib.parse
+        import re as _r
+        tg={}
+        for l in open("/etc/paperclip-telegram.env"):
+            mm=_r.match(r"([A-Z_]+)=(.+)",l.strip())
+            if mm: tg[mm.group(1)]=mm.group(2).strip().strip(chr(34)).strip(chr(39))
+        msg="⚠️ Paperclip verify:\n"+"\n".join(crit)
+        urllib.request.urlopen(f"https://api.telegram.org/bot{tg['TELEGRAM_BOT_TOKEN']}/sendMessage",data=urllib.parse.urlencode({"chat_id":tg["TELEGRAM_ALLOWED_USER_ID"],"text":msg}).encode(),timeout=15)
+    except Exception as e: open("/var/lib/paperclip/verify.log","a").write(f"tg-fail {e}\n")
+print(out)
+PYEOF

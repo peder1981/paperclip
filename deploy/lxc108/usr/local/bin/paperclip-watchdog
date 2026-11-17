@@ -1,0 +1,37 @@
+#!/bin/bash
+# paperclip-watchdog: nenhum agente parado com tarefa pendente.
+# Varre issues abertas; se assignee idle/error/terminated e issue sem atividade >30min -> wake.
+K=$(sed -n 's/^PAPERCLIP_BOARD_API_KEY=//p' /etc/paperclip-telegram.env)
+API=http://127.0.0.1:3100
+CID=c9a85ff4-4643-4105-a6e5-0c6e54e3aea8
+LOG=/var/lib/paperclip/watchdog.log
+LOCK=/tmp/paperclip-watchdog.lock
+exec 9>$LOCK; flock -n 9 || exit 0
+
+python3 - <<'PYEOF'
+import json,urllib.request,time,sys
+K=[l.split("=",1)[1].strip() for l in open("/etc/paperclip-telegram.env") if l.startswith("PAPERCLIP_BOARD_API_KEY=")][0]
+API="http://127.0.0.1:3100"; CID="c9a85ff4-4643-4105-a6e5-0c6e54e3aea8"
+def req(path,method="GET",body=None):
+    r=urllib.request.Request(API+path,data=(json.dumps(body).encode() if body else None),method=method,headers={"Authorization":"Bearer "+K,"Content-Type":"application/json"})
+    try: return json.loads(urllib.request.urlopen(r,timeout=30).read())
+    except Exception as e: return {"_err":str(e)}
+now=time.time()
+agents={a["id"]:a for a in req(f"/api/companies/{CID}/agents") if not a.get("_err")}
+issues=req(f"/api/companies/{CID}/issues?limit=1000")
+open_=[i for i in issues if isinstance(i,dict) and i.get("status") in ("todo","in_progress","blocked")]
+actions=[]
+for i in open_:
+    aid=i.get("assigneeAgentId")
+    if not aid or aid not in agents: continue
+    a=agents[aid]
+    st=a.get("status","")
+    ident=i.get("identifier") or i.get("id","")[:8]
+    if st in ("terminated","dead"): actions.append(f"ALERT {ident}: assignee {a['name']} terminado — precisa recriar"); continue
+    if st in ("idle","error","paused"):
+        r=req(f"/api/agents/{aid}/wakeup","POST",{"reason":f"watchdog: {ident} {i.get('status')} sem progresso — retomar"})
+        actions.append(f"WAKE {a['name']} ({st}) p/ {ident} [{i.get('status')}] -> {r.get('status',r.get('_err','?'))}")
+out=(f"{time.strftime('%Y-%m-%dT%H:%M:%S')} open={len(open_)} actions={len(actions)}\n"+"\n".join(actions)+"\n")
+sys.stdout.write(out)
+open("/var/lib/paperclip/watchdog.log","a").write(out)
+PYEOF

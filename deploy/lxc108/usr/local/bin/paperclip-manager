@@ -1,0 +1,198 @@
+#!/usr/bin/env python3
+# paperclip-manager: gerente deterministico. DRY=1 so reporta; DRY=0 age.
+import json,urllib.request,os,sys,time,re
+K=[l.split("=",1)[1].strip() for l in open("/etc/paperclip-telegram.env") if l.startswith("PAPERCLIP_BOARD_API_KEY=")][0]
+API="http://127.0.0.1:3100"; CID="c9a85ff4-4643-4105-a6e5-0c6e54e3aea8"
+D1="http://192.168.2.194:11435/decide"; DRY=os.environ.get("DRY","1")=="1"
+DEV="8d9f3cc1-6f9a-48a2-8827-b6ca8852b723"; ESP="d2b3f080-c6f0-4be0-afb8-12635695c993"
+SEC="49671c76-ceb9-4aec-ba71-bde2995c1721"; CTO="6a50f8c5-8e0b-4dfb-9488-95490d69fe78"
+def req(p,m="GET",b=None,t=30):
+    r=urllib.request.Request(API+p,data=(json.dumps(b).encode() if b is not None else None),method=m,headers={"Authorization":"Bearer "+K,"Content-Type":"application/json"})
+    try: return json.loads(urllib.request.urlopen(r,timeout=t).read())
+    except Exception as e: return {"_err":str(e)}
+def d1(text,q):
+    try:
+        r=urllib.request.Request(D1,data=json.dumps({"text":text[:3000],"question":q}).encode(),headers={"Content-Type":"application/json"})
+        return json.loads(urllib.request.urlopen(r,timeout=30).read())
+    except Exception as e: return {"verdict":"unknown","_err":str(e)}
+def act(desc,fn):
+    if DRY: return "DRY:"+desc
+    return fn()
+now=time.time(); R=[]
+STATE="/var/lib/paperclip/manager-state.json"
+try: state=json.load(open(STATE))
+except Exception: state={}
+def bump(key):
+    e=state.get(key,{"n":0,"t":0}); e["n"]=e["n"]+1 if now-e["t"]<172800 else 1; e["t"]=now; state[key]=e; return e["n"]
+def quarantined(ident):
+    e=state.get("i:"+ident,{})
+    return now-e.get("t",0)<86400 and e.get("n",0)>=3
+agents={a["id"]:a for a in req(f"/api/companies/{CID}/agents") if isinstance(a,dict)}
+issues=[i for i in req(f"/api/companies/{CID}/issues?limit=1000") if isinstance(i,dict)]
+open_=[i for i in issues if i.get("status") in ("todo","in_progress","blocked","in_review")]
+byid={i.get("id"):i for i in issues}
+for i in open_:
+    ident=i.get("identifier",""); aid=i.get("assigneeAgentId"); st=i.get("status")
+    if quarantined(ident):
+        R.append(f"QUAR {ident} — 3+ intervencoes sem resolver, congelada 24h (escalada ao CTO)")
+        continue
+    title=(i.get("title") or "")[:70]
+    # 1. blocked cujo blocker fechou -> desbloqueia
+    if st=="blocked":
+        bb=i.get("blockedBy") or []
+        if bb and all(byid.get(b.get("id"),b).get("status")=="done" for b in bb):
+            act(f"{ident} desbloquear (blockers done)",lambda:req(f"/api/issues/{i['id']}","PATCH",{"status":"todo"}))
+            if bump("i:"+ident)>=3:
+                act(f"escalar {ident}",lambda:req(f"/api/issues/{i['id']}/comments","POST",{"body":"[metal] 3+ ciclos de desbloqueio sem resolucao — escalando ao CTO. Intervencao humana necessaria."}))
+                R.append(f"ESCALATE {ident} -> CTO (ciclo)")
+                continue
+            R.append(f"UNBLOCK {ident} — blockers done")
+            if aid: act(f"aviso {ident}",lambda:req(f"/api/issues/{i['id']}/comments","POST",{"body":"[metal] desbloqueada — blockers done. Aguardando execucao natural."}))
+        elif not bb:
+            cs=req(f"/api/issues/{i['id']}/comments?limit=20")
+            last=(sorted(cs,key=lambda c:c.get("createdAt",""))[-1].get("body","") if isinstance(cs,list) and cs else "").lower()
+            tipado=("dono da espera" in last and ("ação de desbloqueio" in last or "acao de desbloqueio" in last))
+            if tipado:
+                R.append(f"RESPECT {ident} — bloqueio tipado (dono+acao+evidencia)")
+                continue
+            v=d1(f"issue {ident} '{title}' esta blocked. Motivo declarado no ultimo comentario: {last[:1500]}","O bloqueio e legitimo, isto e, ha espera real por insumo, acesso ou decisao externa?")
+            R.append(f"D1 blocked-sem-blocker {ident}: {v.get('verdict')} {v.get('confidence','')}")
+            if v.get("verdict")=="no" and float(v.get("confidence") or 0)>=0.6:
+                act(f"{ident} desbloquear (d1: ilegitimo)",lambda:req(f"/api/issues/{i['id']}","PATCH",{"status":"todo"}))
+                R.append(f"UNBLOCK {ident} — d1: bloqueio ilegitimo")
+                if aid: act(f"aviso {ident}",lambda:req(f"/api/issues/{i['id']}/comments","POST",{"body":"[metal] bloqueio ilegitimo derrubado pelo d1. Aguardando execucao natural."}))
+    # 2. unassigned -> atribui por regra
+    if not aid and st=="todo":
+        t=(title or "").lower()
+        dest=DEV if any(k in t for k in("advpl","protheus","compil","prw","tlpp","rpo","mata","sc7","mt2")) else ESP if any(k in t for k in("layout","parser","integra","credishop","vero","banese","boavista")) else SEC if any(k in t for k in("e-mail","email","digest","triagem","resumo")) else CTO
+        act(f"{ident} assign {dest[:8]}",lambda d=dest:req(f"/api/issues/{i['id']}","PATCH",{"assigneeAgentId":d}))
+        R.append(f"ASSIGN {ident} -> {agents.get(dest,{}).get('name','?')[:20]}")
+    # 3. parada >30min sem atividade -> d1 -> wake
+    upd=i.get("updatedAt","")
+    try: stale=(now-time.mktime(time.strptime(upd[:19],"%Y-%m-%dT%H:%M:%S")))/60>30
+    except Exception: stale=False
+    if stale and aid and st in ("in_progress","todo"):
+        a=agents.get(aid,{})
+        if a.get("status") in("idle","error","paused"):
+            v=d1(f"issue {ident} '{title}' status {st}, assignee {a.get('name','')} parado ha >30min","O agente precisa ser acordado?")
+            R.append(f"D1 stale {ident}: {v.get('verdict')} {v.get('confidence','')}")
+            if v.get("verdict")=="yes":
+                act(f"aviso {ident}",lambda:req(f"/api/issues/{i['id']}/comments","POST",{"body":"[metal] issue parada >30min — d1 confirmou. Sem wake automatico (custo)."}))
+    # 4. in_review -> d1 julga evidencia; no -> devolve ao responsavel de direito
+    if st=="in_review":
+        cs=req(f"/api/issues/{i['id']}/comments?limit=20")
+        last=(sorted(cs,key=lambda c:c.get("createdAt",""))[-1].get("body","") if isinstance(cs,list) and cs else "")
+        v=d1(f"issue {ident} '{title}'. Ultima entrega: {last[:1500]}","A evidencia apresentada comprova a conclusao do trabalho?")
+        R.append(f"D1 review {ident}: {v.get('verdict')} {v.get('confidence','')}")
+        if v.get("verdict")=="no" and float(v.get("confidence") or 0)>=0.6 and aid:
+            act(f"{ident} devolver p/ ajuste",lambda:req(f"/api/issues/{i['id']}","PATCH",{"status":"in_progress"}))
+            act(f"comentario devolucao {ident}",lambda:req(f"/api/issues/{i['id']}/comments","POST",{"body":f"[metal] d1 julgou a evidencia insuficiente ({v.get('confidence')}). Devolvido ao responsavel de direito: aponte a falha e ajuste."}))
+            act(f"aviso-devolucao {ident}",lambda:req(f"/api/issues/{i['id']}/comments","POST",{"body":"[metal] devolvida ao responsavel — d1 julgou evidencia insuficiente. Ajustar."}))
+            if bump("i:"+ident)>=3:
+                act(f"escalar {ident}",lambda:req(f"/api/issues/{i['id']}/comments","POST",{"body":"[metal] 3+ devolucoes sem evidencia valida — escalando ao CTO. Julgamento humano necessario."}))
+                R.append(f"ESCALATE {ident} -> CTO (review loop)")
+                continue
+            R.append(f"RETURN {ident} -> responsavel (d1 no)")
+        elif v.get("verdict")=="yes" and float(v.get("confidence") or 0)>=0.7:
+            act(f"{ident} aprovar (gate d1)",lambda:req(f"/api/issues/{i['id']}/comments","POST",{"body":f"[metal] GATE: d1 aprovou a evidencia ({v.get('confidence')}). Segue para entrega/homologacao."}))
+            act(f"{ident} todo-entrega",lambda:req(f"/api/issues/{i['id']}","PATCH",{"status":"todo"}))
+            R.append(f"APPROVE {ident} — gate d1 {v.get('confidence')}")
+# 4.5 BLOQUEIO FABRICADO: espera por algo inexistente ou ja respondido
+for i in open_:
+    ident=i.get("identifier",""); st=i.get("status")
+    if quarantined(ident) or st not in ("blocked","todo","in_progress"): continue
+    cs=req(f"/api/issues/{i['id']}/comments?limit=6")
+    if not isinstance(cs,list) or not cs: continue
+    last=sorted(cs,key=lambda c:c.get("createdAt",""))[-1]
+    b=(last.get("body") or "")
+    # so analisa se ultimo comentario e de agente e indica espera/bloqueio
+    if last.get("authorType")!="agent": continue
+    if not re.search(r"aguard|waiting|pendente|falta|espero|sem o arquivo|quando chegar|esperando",b.lower()): continue
+    ctx=(i.get("title","")+" "+b)[:2200]
+    v=d1(ctx,"O bloqueio/espera e real e necessario? (nao=fabricado, ja respondido, ou espera por algo que nao existe)")
+    if v.get("verdict")=="no" and float(v.get("confidence") or 0)>=0.7:
+        act(f"{ident} desfabricar",lambda:req(f"/api/issues/{i['id']}/comments","POST",{"body":f"[metal] BLOQUEIO FABRICADO detectado (d1 {v.get('confidence')}): a espera declarada nao e real/necessaria. Prossiga com o que existe — nao reabra pendencia fabricada."}))
+        if st=="blocked":
+            act(f"{ident} unblock",lambda:req(f"/api/issues/{i['id']}","PATCH",{"status":"in_progress"}))
+        bump(ident)
+        R.append(f"DEFAB {ident} — bloqueio fabricado (d1 no {v.get('confidence')})")
+    elif v.get("verdict")=="yes":
+        R.append(f"FAB-OK {ident} — espera real (d1 yes)")
+# 4.6 PERGUNTA RESPONDIVEL: agente pergunta o que ja tem resposta -> d1 responde no lugar
+for i in open_:
+    ident=i.get("identifier","")
+    if quarantined(ident): continue
+    cs=req(f"/api/issues/{i['id']}/comments?limit=8")
+    if not isinstance(cs,list) or not cs: continue
+    last=sorted(cs,key=lambda c:c.get("createdAt",""))[-1]
+    if last.get("authorType")!="agent": continue
+    b=last.get("body") or ""
+    if not re.search(r"(pergunta|question|\?|decidir|escolher|confirmar)",b.lower()) or len(b)<80: continue
+    ctx="issue "+ident+" "+(i.get("title") or "")+" | pergunta: "+b[:1500]
+    v=d1(ctx,"A resposta para essa pergunta ja existe no contexto/documentacao/issue? (yes=pode responder sozinho)")
+    if v.get("verdict")=="yes" and float(v.get("confidence") or 0)>=0.7:
+        act(f"{ident} auto-resposta",lambda:req(f"/api/issues/{i['id']}/comments","POST",{"body":"[metal] PERGUNTA RESPONDIVEL (d1 "+str(v.get("confidence"))+"): a resposta ja existe no contexto do issue/docs — consulte o historico antes de escalar. Prossiga."}))
+        bump(ident)
+        R.append(f"AUTOANS {ident} — pergunta ja respondida (d1 {v.get('confidence')})")
+# 4.7 FECHAMENTO ELEGIVEL: todos blockers done + evidencia -> d1 decide done
+for i in open_:
+    ident=i.get("identifier","")
+    if quarantined(ident) or i.get("status") not in ("in_progress","in_review"): continue
+    bl=[b for b in (i.get("blockedBy") or [])]
+    # so avalia se issue tem tecnico/ com artefatos E sem blocker aberto
+    import glob as _g, os as _o
+    if not _o.path.isdir("/var/lib/paperclip/tecnico/"+ident): continue
+    if bl: continue
+    ctx="issue "+ident+" "+(i.get("title") or "")+" | evidencia em tecnico/, sem blockers abertos"
+    v=d1(ctx,"O trabalho descrito esta completo e pode ser marcado done?")
+    if v.get("verdict")=="yes" and float(v.get("confidence") or 0)>=0.85:
+        act(f"{ident} done-auto",lambda:req(f"/api/issues/{i['id']}","PATCH",{"status":"done"}))
+        act(f"nota {ident}",lambda:req(f"/api/issues/{i['id']}/comments","POST",{"body":"[metal] DONE automatico (d1 "+str(v.get("confidence"))+"): sem blockers, evidencia registrada, entrega feita."}))
+        R.append(f"AUTODONE {ident} — d1 {v.get('confidence')}")
+# 5. anuncio-sem-execucao: ultimo comentario do agente promete transicao e nada mudou -> metal executa
+for i in open_:
+    ident=i.get("identifier",""); st=i.get("status"); 
+    if quarantined(ident) or st not in ("in_progress","todo"): continue
+    upd=i.get("updatedAt","")
+    try: stale=(now-time.mktime(time.strptime(upd[:19],"%Y-%m-%dT%H:%M:%S")))/60>30
+    except: stale=False
+    if not stale: continue
+    cs=req(f"/api/issues/{i['id']}/comments?limit=5")
+    if not isinstance(cs,list) or not cs: continue
+    last=sorted(cs,key=lambda c:c.get("createdAt",""))[-1]
+    if last.get("authorType")!="agent": continue
+    b=(last.get("body") or "").lower()
+    alvo=None
+    if re.search(r"in_review|para revisao|to review",b): alvo="in_review"
+    elif re.search(r"mover para done|marco done|done\b",b) and re.search(r"vou|moving|marco|fecho",b): alvo="done"
+    if alvo:
+        r=req(f"/api/issues/{i['id']}","PATCH",{"status":alvo})
+        if r.get("_err") or r.get("error"):
+            if "review participant" in str(r.get("_err","")+str(r.get("error",""))):
+                v=d1(f"issue {ident}: {last.get('body','')[:1200]}","O trabalho esta completo para ir a done sem revisao formal?") 
+                if v.get("verdict")=="yes":
+                    act(f"{ident} done-sem-revisao",lambda:req(f"/api/issues/{i['id']}","PATCH",{"status":"done"}))
+                    act(f"aviso {ident}",lambda:req(f"/api/issues/{i['id']}/comments","POST",{"body":"[metal] agente anunciou e nao executou; transicao executada via d1-gate (sem reviewer configurado)."}))
+                    R.append(f"EXEC {ident} -> done (anuncio nao executado, d1 yes)")
+                    continue
+            R.append(f"EXEC-FAIL {ident} -> {alvo}: {str(r.get('_err') or r.get('error'))[:80]}")
+        else:
+            R.append(f"EXEC {ident} -> {alvo} (anuncio nao executado)")
+# 6. ORFAS: issue aberta sem responsavel ha >24h -> avisa o operador (1x a cada 72h)
+orf=[]
+for i in issues:
+    if i.get("status") not in ("backlog","todo","in_progress","blocked","in_review"): continue
+    if i.get("assigneeAgentId") or i.get("assigneeUserId"): continue
+    try: h=(now-time.mktime(time.strptime((i.get("updatedAt") or "")[:19],"%Y-%m-%dT%H:%M:%S")))/3600
+    except Exception: h=0
+    if h>24: orf.append(f"{i.get('identifier')} [{i.get('status')}] parada {h/24:.0f}d: {(i.get('title') or '')[:50]}")
+if orf:
+    R.append("ORFAS "+str(len(orf))+": "+"; ".join(o.split(" ")[0] for o in orf))
+    if now-state.get("orf_notice",0)>259200 and not DRY:
+        import subprocess as _sp
+        _sp.run(["/usr/local/bin/paperclip-notify","[manager] Issues abertas SEM responsavel (nada as acorda; precisam de decisao):\n"+"\n".join(orf[:10])],timeout=30)
+        state["orf_notice"]=now
+out=f"{time.strftime('%Y-%m-%dT%H:%M:%S')} DRY={DRY} open={len(open_)} acoes={len(R)}\n"+"\n".join(R)+"\n"
+json.dump(state,open(STATE,"w"))
+open("/var/lib/paperclip/manager.log","a").write(out)
+sys.stdout.write(out)

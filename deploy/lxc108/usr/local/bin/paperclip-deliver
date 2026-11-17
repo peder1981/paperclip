@@ -1,0 +1,54 @@
+#!/bin/bash
+# paperclip-deliver: empacota+entrega trabalho evidenciado que ninguem entregou.
+exec 9>/tmp/deliver.lock; flock -n 9 || exit 0
+python3 - <<'PYEOF'
+import json,urllib.request,os,glob,zipfile,re,time,subprocess
+K=[l.split("=",1)[1].strip() for l in open("/etc/paperclip-telegram.env") if l.startswith("PAPERCLIP_BOARD_API_KEY=")][0]
+API="http://127.0.0.1:3100"; CID="c9a85ff4-4643-4105-a6e5-0c6e54e3aea8"
+LOG="/var/lib/paperclip/deliver.log"
+def req(p,m="GET",b=None,t=30):
+    r=urllib.request.Request(API+p,data=(json.dumps(b).encode() if b else None),method=m,headers={"Authorization":"Bearer "+K,"Content-Type":"application/json"})
+    try: return json.loads(urllib.request.urlopen(r,timeout=t).read())
+    except Exception as e: return {"_err":str(e)}
+def log(s): open(LOG,"a").write(f"{time.strftime('%Y-%m-%dT%H:%M:%S')} {s}\n"); print(s)
+issues=[i for i in req(f"/api/companies/{CID}/issues?limit=100") if isinstance(i,dict)]
+# acha projetos com tecnico/JMP-XX (fonte+evidencia) e issue ainda aberta
+for i in issues:
+    ident=i.get("identifier","")
+    if i.get("status") not in ("in_progress","in_review","blocked"): continue
+    tdir=f"/var/lib/paperclip/tecnico/{ident}"
+    # projeto filho com evidencia: procura tecnico/JMP-* que alimenta este
+    filhos=[d for d in glob.glob("/var/lib/paperclip/tecnico/JMP-*") if os.path.isdir(d) and os.path.isdir(d+"/evidencia") and glob.glob(d+"/src/*.prw")]
+    if not filhos: continue
+    # so entrega se issue e o "projeto pai" (tem blocker/tecnica acumulada)
+    for fd in filhos:
+        fid=fd.split("/")[-1]
+        sent=f"/var/lib/paperclip/tecnico/{fid}/.entregue"
+        if os.path.exists(sent): continue
+        # monta zip padrao
+        pkg=f"{fd}/{fid}-entrega.zip"
+        z=zipfile.ZipFile(pkg,"w",zipfile.ZIP_DEFLATED)
+        # REGRA OPERADOR: so artefatos do resultado FINAL
+        # fontes de producao (.prw/.tlpp de ponto de entrada, NAO harness J6*/diagnostico), dict-diferencial, docs de mudanca
+        for f in glob.glob(fd+"/src/*.prw")+glob.glob(fd+"/src/*.tlpp"):
+            b=os.path.basename(f)
+            if re.match(r"^(MT|MA|J21|U_)",b) and not re.search(r"(TEST|FF|RD|LEN|STUB|CD|DIAG)",b): z.write(f,b)
+        for f in glob.glob(fd+"/*diferencial*.sql")+glob.glob(fd+"/dict-*.sql"): z.write(f,os.path.basename(f))
+        for md in glob.glob(fd+"/*MUDANCA*.md")+glob.glob(fd+"/CHANGES*.md"): z.write(md,os.path.basename(md))
+        z.close()
+        if not os.path.exists(pkg) or os.path.getsize(pkg)<500: continue
+        # envia
+        body=f"/var/lib/paperclip/outbox/{fid}-entrega-body.txt"
+        open(body,"w").write(f"{fid}: pacote de entrega automatico.\nFonte + evidencias + diff em anexo.\nGerado por paperclip-deliver.\n")
+        rcs=[]
+        for to in ("operador-cliente@example.invalid","operador@example.invalid"):
+            r=subprocess.run(["/usr/local/bin/paperclip-send-mail",to,f"[{fid}] Entrega automatica - pacote completo",body,"--attach",pkg],capture_output=True,text=True,timeout=60)
+            rcs.append(r.returncode)
+            log(f"MAIL {fid} -> {to}: rc={r.returncode} {r.stderr[-100:] if r.stderr else chr(39)+chr(39)}")
+        if all(rc==0 for rc in rcs):
+            open(sent,"w").write(str(time.time()))
+            req(f"/api/issues/{i['id']}/comments","POST",{"body":f"[deliver] pacote {fid}-entrega.zip enviado aos destinatarios. Fonte+evidencia+doc."})
+            log(f"DELIVERED {fid} via {ident}")
+        else:
+            log(f"MAIL-FAIL {fid} — sentinela NAO marcada; retenta no proximo ciclo")
+PYEOF

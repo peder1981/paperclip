@@ -1,0 +1,60 @@
+#!/bin/bash
+# guardian-watch: varre comentarios recentes dos agentes no board Paperclip
+# e roda guardian-check em cada um ainda nao avaliado.
+# Flags ficam em /var/lib/paperclip/guardian/flags.log
+# Estado em /var/lib/paperclip/guardian/seen.txt
+set -u
+DIR=/var/lib/paperclip/guardian
+mkdir -p "$DIR"
+SEEN="$DIR/seen.txt"; FLAGS="$DIR/flags.log"
+touch "$SEEN" "$FLAGS"
+K=$(sed -n 's/^PAPERCLIP_BOARD_API_KEY=//p' /etc/paperclip-telegram.env)
+API="http://127.0.0.1:3100"
+CID="c9a85ff4-4643-4105-a6e5-0c6e54e3aea8"
+python3 - "$SEEN" "$FLAGS" "$K" "$API" "$CID" <<'PY'
+import json, sys, urllib.request, subprocess, datetime
+seen_path, flags_path, K, API, CID = sys.argv[1:6]
+seen = set(open(seen_path).read().split())
+new_seen = set(seen)
+def get(path):
+    r = urllib.request.Request(API+path, headers={"Authorization": "Bearer "+K})
+    return json.loads(urllib.request.urlopen(r, timeout=30).read())
+# issues abertas da company
+try:
+    issues = get(f"/api/companies/{CID}/issues?limit=50")
+except Exception as e:
+    print("WATCH_ERR issues:", e); sys.exit(1)
+items = issues if isinstance(issues, list) else issues.get("issues", issues.get("items", []))
+flagged = 0; checked = 0
+for iss in items:
+    iid = iss.get("id")
+    try:
+        comments = get(f"/api/issues/{iid}/comments?limit=20")
+    except Exception:
+        continue
+    clist = comments if isinstance(comments, list) else comments.get("comments", comments.get("items", []))
+    for c in clist:
+        cid = c.get("id")
+        if not cid or cid in seen: continue
+        author = c.get("authorAgentId") or c.get("agentId") or ""
+        body = (c.get("body") or c.get("content") or "")[:8000]
+        if not author or len(body) < 80:
+            new_seen.add(cid); continue
+        # roda guardian no comentario do agente
+        try:
+            p = subprocess.run(["/usr/local/bin/guardian-check", body],
+                               capture_output=True, text=True, timeout=240)
+            verdict = p.stdout.strip()
+        except Exception:
+            verdict = "GUARDIAN_UNAVAILABLE"
+        checked += 1
+        if "yes" in verdict.lower():
+            flagged += 1
+            ts = datetime.datetime.utcnow().isoformat()[:19]
+            line = f"{ts} | issue={iss.get(number,iid)} | comment={cid[:8]} | agent={author[:8]} | {verdict[:60]}"
+            with open(flags_path, "a") as f: f.write(line+"\n")
+            print("FLAG:", line)
+        new_seen.add(cid)
+open(seen_path, "w").write("\n".join(new_seen))
+print(f"guardian-watch: {checked} comentarios avaliados, {flagged} flags")
+PY

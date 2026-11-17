@@ -1,0 +1,2 @@
+# checagem de saude do Paperclip (API e disco)
+*/5 * * * * root /usr/local/bin/paperclip-healthcheck
