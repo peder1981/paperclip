@@ -70,4 +70,10 @@ s.login(env["MAIL_IMAP_USER"], env["MAIL_IMAP_PASS"])
 s.send_message(msg, from_addr=SENDER, to_addrs=[to])
 s.quit()
 att_names = [os.path.basename(a) for a in attachments if os.path.isfile(os.path.realpath(a))]
+# ledger de envios: um envio com anexo e [JMP-NNN] no assunto conta como entrega (lido por bridge.py e paperclip-deliver)
+import re, datetime
+os.makedirs("/var/lib/paperclip-mail", exist_ok=True)
+with open("/var/lib/paperclip-mail/sent.log", "a") as _l:
+    for _j in sorted(set(re.findall(r"JMP-\d+", subject))):
+        _l.write(f"{datetime.datetime.now().isoformat(timespec='seconds')}\t{_j}\t{to}\t{len(att_names)}\n")
 print(f"sent to {to}" + (f" ({len(att_names)} anexo(s): {', '.join(att_names)})" if att_names else ""))

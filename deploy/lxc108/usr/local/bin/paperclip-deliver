@@ -25,6 +25,8 @@ for i in issues:
         fid=fd.split("/")[-1]
         sent=f"/var/lib/paperclip/tecnico/{fid}/.entregue"
         if os.path.exists(sent): continue
+        # ja houve envio com anexo para este JMP (ledger de paperclip-send-mail): nunca reenvia
+        if any(l.split("\t")[1:2]==[fid] and l.rstrip().split("\t")[-1]!="0" for l in open("/var/lib/paperclip-mail/sent.log")): continue
         # monta zip padrao
         pkg=f"{fd}/{fid}-entrega.zip"
         z=zipfile.ZipFile(pkg,"w",zipfile.ZIP_DEFLATED)

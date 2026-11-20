@@ -15,6 +15,20 @@ em ciclo contínuo. A árvore espelha os caminhos absolutos no container
 | `paperclip.service.d/10-resilience.conf` | `Restart=always`, sem limite de reinícios, depois do PostgreSQL | systemd |
 | `var/lib/paperclip/mail-digest/jmp30_fetch.py` | resumo dos e-mails da caixa de projetos para o CTO | `0 */2` |
 
+## Envio de entregas (uma única vez por issue)
+
+- `paperclip-send-mail` registra todo envio bem-sucedido em `/var/lib/paperclip-mail/sent.log`
+  (`data<TAB>JMP-NNN<TAB>destinatário<TAB>anexos`), com os `[JMP-NNN]` do assunto.
+- `var/lib/paperclip/tools/telegram-bridge/bridge.py` envia a entrega ao operador quando o issue
+  vira `done`, mas pula o issue se o ledger já tem envio com anexo; o lote é esvaziado antes do
+  envio, então falha avisa no Telegram e não reenvia em loop; nomes de projeto viram nomes de
+  arquivo seguros.
+- `paperclip-deliver` respeita o mesmo ledger.
+- As instruções dos agentes (`AGENTS.md` de cada agente, fora deste repositório) dizem: fechar
+  `done` após envio autorizado é seguro; envio manual leva `[JMP-NNN]` no assunto; `in_review` só
+  com caminho de revisão real (interação, approval, usuário do board, participante ou monitor),
+  senão `done` ou `blocked` com `unblockDescriptor`.
+
 ## Segredos
 
 Nenhum segredo está no repositório. A chave do board é lida em tempo de execução de
