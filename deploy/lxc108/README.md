@@ -31,6 +31,11 @@ em ciclo contínuo. A árvore espelha os caminhos absolutos no container
   entrega (regra do operador de 29/10).
 - `paperclip-verify` consulta no banco issues abertos ocultos ou com dono encerrado, que a
   listagem da API não retorna.
+- `paperclip-send-mail` recusa envio com anexo sem `JMP-NNN` no assunto: toda entrega fica no ledger.
+- O bridge só envia entrega automática quando o issue cita arquivos reais; o `.md` gerado a partir
+  do comentário não conta como pacote. Sem pacote, avisa no Telegram e não envia nada.
+- `paperclip-verify` devolve a `paperclip` todo arquivo da instância com outro dono (arquivo root
+  na pasta de instruções derruba o run com EACCES) e alerta erros do bridge (`BRIDGE-ERRO`).
 - As instruções dos agentes (`AGENTS.md` de cada agente, fora deste repositório) dizem: fechar
   `done` após envio autorizado é seguro; envio manual leva `[JMP-NNN]` no assunto; `in_review` só
   com caminho de revisão real (interação, approval, usuário do board, participante ou monitor),

@@ -785,11 +785,18 @@ def flush_delivery_batch():
         try:
             all_bodies = []
             all_attachments = []
+            real_files = []
             for iid, ident, title in items:
                 _, body = find_best_deliverable(iid)
                 materialized = materialize_deliverable(iid, ident, body)
+                real_files.extend(collect_attachments(body))
                 all_attachments.extend(collect_attachments(body) + materialized)
                 all_bodies.append(f"## {ident} — {title}\n\n{body}\n\n{'—'*40}\n")
+            if not real_files:  # o .md gerado do comentario nao conta como pacote
+                # sem arquivo real nao ha entrega: um comentario solto nao vai ao cliente
+                log(f"entrega sem pacote, nada enviado: {project} ({idents})")
+                send(f"📭 {idents}: concluído sem pacote anexável — nada enviado. Se houver entrega, envie com [JMP-NNN] no assunto e anexos.")
+                continue
             consolidated = (f"Entregas consolidadas — Projeto: {project}\n"
                            f"Issues: {idents}\n"
                            f"{'='*60}\n\n" + "\n".join(all_bodies))

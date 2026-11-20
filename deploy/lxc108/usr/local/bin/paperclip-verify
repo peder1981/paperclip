@@ -44,6 +44,12 @@ for i in open_:
 _q="select i.identifier||' '||i.status||' '||coalesce(a.name,'-')||' '||case when i.hidden_at is not null then 'oculto' else 'dono-encerrado' end from issues i left join agents a on a.id=i.assignee_agent_id where i.status not in ('done','cancelled') and (i.hidden_at is not null or a.status='terminated')"
 for _l in sh(f'sudo -u postgres psql -d paperclip -Atc "{_q}"').splitlines():
     if _l.strip(): A.append(f"DEAD-ASSIGNEE {_l} (invisivel na API) — reatribuir/cancelar")
+# 2.6 Arquivo da instancia com dono errado quebra run de agente (EACCES) e git: corrige e avisa
+_n=sh("find /var/lib/paperclip/instances -xdev ! -user paperclip -print -exec chown -h paperclip:paperclip {} + 2>/dev/null | wc -l")
+if _n not in ("","0"): A.append(f"OWNERSHIP {_n} arquivo(s) da instancia com dono errado — corrigido para paperclip")
+# 2.7 Bridge (entregas/Telegram) com erro nos ultimos 16 min
+_b=sh("journalctl -u paperclip-telegram --since -16min --no-pager | grep -E 'erro envio|falha entrega|erro:|Traceback' | tail -3")
+if _b: A.append("BRIDGE-ERRO " + _b.replace(chr(10)," | ")[:300])
 # 3. STALE com d1 (>2h sem atividade = suspeito real)
 now=time.time()
 for i in open_:
@@ -79,7 +85,7 @@ if st.get("fallback") and now-st.get("since",0)>86400:
 out=f"{time.strftime('%Y-%m-%dT%H:%M:%S')} checks=5 alertas={len(A)}\n"+"\n".join(A)+"\n"
 open("/var/lib/paperclip/verify.log","a").write(out)
 # Alerta Telegram se falha critica
-crit=[a for a in A if a.startswith(("SERVICE","DEAD-ASSIGNEE","METAL-QUIETO","D1-decide","AGENT-ERROR","AGENT-STUCK"))]
+crit=[a for a in A if a.startswith(("SERVICE","DEAD-ASSIGNEE","METAL-QUIETO","D1-decide","AGENT-ERROR","AGENT-STUCK","OWNERSHIP","BRIDGE-ERRO"))]
 if crit:
     try:
         import urllib.parse

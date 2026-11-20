@@ -23,6 +23,9 @@ while i < len(sys.argv):
     else:
         i += 1
 
+import re as _re
+if attachments and not _re.search(r"JMP-\d+", subject):
+    sys.exit("refused: envio com anexo e entrega; o assunto precisa conter [JMP-NNN] do issue (registra o envio e impede reenvio)")
 if os.path.islink(body_file):
     sys.exit("refused: symlink body")
 real = os.path.realpath(body_file)
