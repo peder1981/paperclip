@@ -11,10 +11,11 @@ API="http://127.0.0.1:3100"; CID="c9a85ff4-4643-4105-a6e5-0c6e54e3aea8"
 AG={"provider":"openai","method":"api_key","mode":"shared","connectionId":"4d055877-a60d-48fc-835c-6c5328f3130c","grantId":"f39e8146-c334-4c25-b6cb-460292df32fb"}
 SUB={"provider":"anthropic","method":"subscription","mode":"responsible_user"}
 TITULAR={
- "8d9f3cc1-6f9a-48a2-8827-b6ca8852b723": "claude-haiku-5-5",
+ # Dev Senior (8d9f3cc1) fora: roda em opencode/deepseek-flash por decisao do operador (2026-11-20), nao depende de cota Claude
  "d2b3f080-c6f0-4be0-afb8-12635695c993": "claude-haiku-5-5",
  "49671c76-ceb9-4aec-ba71-bde2995c1721": "claude-haiku-5-5",
  "6a50f8c5-8e0b-4dfb-9488-95490d69fe78": "claude-haiku-5-5",
+ "4a173ff1-4c9f-4534-b332-f34e617cc77a": "claude-haiku-5-5",  # Analista Funcional: claude por decisao do operador (2026-11-20)
 }
 STATE="/var/lib/paperclip/autofb-state.json"
 def req(p,m="GET",b=None,t=60):

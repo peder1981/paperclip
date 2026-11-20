@@ -35,9 +35,15 @@ agents={a["id"]:a for a in req(f"/api/companies/{CID}/agents") if isinstance(a,d
 issues=[i for i in req(f"/api/companies/{CID}/issues?limit=1000") if isinstance(i,dict)]
 open_=[i for i in issues if i.get("status") in ("todo","in_progress","blocked","in_review")]
 for i in open_:
-    a=agents.get(i.get("assigneeAgentId") or "")
-    if a and a.get("status") in ("terminated","dead"):
-        A.append(f"DEAD-ASSIGNEE {i.get('identifier')} — dono {a.get('name')} terminado, reatribuir")
+    aid=i.get("assigneeAgentId")
+    a=agents.get(aid or "")
+    # a lista de agentes da API omite os encerrados: dono ausente da lista = dono encerrado
+    if aid and (a is None or a.get("status") in ("terminated","dead")):
+        A.append(f"DEAD-ASSIGNEE {i.get('identifier')} — dono {(a or {}).get('name', aid[:8])} encerrado, reatribuir")
+# 2.5 Pontos cegos da API: issue aberto oculto (hiddenAt) ou com dono encerrado nao aparece na listagem
+_q="select i.identifier||' '||i.status||' '||coalesce(a.name,'-')||' '||case when i.hidden_at is not null then 'oculto' else 'dono-encerrado' end from issues i left join agents a on a.id=i.assignee_agent_id where i.status not in ('done','cancelled') and (i.hidden_at is not null or a.status='terminated')"
+for _l in sh(f'sudo -u postgres psql -d paperclip -Atc "{_q}"').splitlines():
+    if _l.strip(): A.append(f"DEAD-ASSIGNEE {_l} (invisivel na API) — reatribuir/cancelar")
 # 3. STALE com d1 (>2h sem atividade = suspeito real)
 now=time.time()
 for i in open_:
