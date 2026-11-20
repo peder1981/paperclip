@@ -24,6 +24,13 @@ em ciclo contínuo. A árvore espelha os caminhos absolutos no container
   envio, então falha avisa no Telegram e não reenvia em loop; nomes de projeto viram nomes de
   arquivo seguros.
 - `paperclip-deliver` respeita o mesmo ledger.
+- O bridge chama `paperclip-send-mail` direto, sem `sudo`: a unit roda com `NoNewPrivileges=true`,
+  que bloqueia `sudo`. Requisitos: `/etc/paperclip-mail.env` root:paperclip 0640 e
+  `/var/lib/paperclip-mail/` root:paperclip 2775 (ledger 0664).
+- Execuções de rotina (`origin_kind = routine_execution`, ex.: triagem de e-mails) nunca geram
+  entrega (regra do operador de 29/10).
+- `paperclip-verify` consulta no banco issues abertos ocultos ou com dono encerrado, que a
+  listagem da API não retorna.
 - As instruções dos agentes (`AGENTS.md` de cada agente, fora deste repositório) dizem: fechar
   `done` após envio autorizado é seguro; envio manual leva `[JMP-NNN]` no assunto; `in_review` só
   com caminho de revisão real (interação, approval, usuário do board, participante ou monitor),

@@ -131,10 +131,10 @@ def save_state(state):
 def snapshot_issues():
     rows = query(
         "select i.id, i.identifier, replace(i.title, chr(10), ' '), i.status, "
-        "coalesce(p.name, '(avulso)') "
+        "coalesce(p.name, '(avulso)'), coalesce(i.origin_kind, '') "
         "from issues i left join projects p on p.id = i.project_id "
         "where i.identifier like 'JMP-%' order by i.identifier")
-    return {r[0]: {"identifier": r[1], "title": r[2], "status": r[3], "project": r[4]} for r in rows}
+    return {r[0]: {"identifier": r[1], "title": r[2], "status": r[3], "project": r[4], "origin": r[5]} for r in rows}
 
 
 def new_comments(since):
@@ -287,7 +287,7 @@ def send_deliverable_mail(iid, ident, title):
         fh.write(header + body)
     subject = f"[Entrega Paperclip] {ident} - {title[:80]}"
     for dest in MAIL_TO:
-        cmd = ["/bin/sudo", "-n", SENDMAIL, dest, subject, fname]
+        cmd = [SENDMAIL, dest, subject, fname]
         for att in attachments:
             cmd.extend(["--attach", att])
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
@@ -800,7 +800,7 @@ def flush_delivery_batch():
             subject = f"[Entregas Paperclip] {project[:60]} — {idents}"
             ok = True
             for dest in MAIL_TO:
-                cmd = ["/bin/sudo", "-n", SENDMAIL, dest, subject, fname]
+                cmd = [SENDMAIL, dest, subject, fname]
                 for att in all_attachments:
                     cmd.extend(["--attach", att])
                 result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
@@ -834,7 +834,10 @@ def tick(state):
                 send(f"⏸ {head}\nStatus: {old or 'novo'} → {new}. Aguarda decisão.")
             elif new in CLOSED_STATUS:
                 send(f"✅ {head}\nStatus: {old or 'novo'} → {new}.")
-                if new == "done":
+                # regra do operador (29/10): execucao de rotina (triagem/resumo) e operacional, nunca gera entrega
+                if new == "done" and info.get("origin") == "routine_execution":
+                    log(f"rotina concluida sem entrega: {info['identifier']}")
+                elif new == "done":
                     proj = info.get("project", "(avulso)")
                     when = already_delivered(info["identifier"])
                     batch = DELIVERY_BATCH.setdefault(proj, [])
